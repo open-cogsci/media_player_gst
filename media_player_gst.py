@@ -45,7 +45,7 @@ import pygame
 from OpenGL.GL import *
 from OpenGL.GLU import *
 
-class media_player(item.item, libopensesame.generic_response.generic_response):
+class media_player_gst(item.item, libopensesame.generic_response.generic_response):
 
 	"""The media_player plug-in offers advanced video playback functionality in OpenSesame, using pyffmpeg"""
 
@@ -387,7 +387,7 @@ class media_player(item.item, libopensesame.generic_response.generic_response):
 
 		return libopensesame.generic_response.generic_response.var_info(self)		
 
-class qtmedia_player(media_player, qtplugin.qtplugin):
+class qtmedia_player_gst(media_player_gst, qtplugin.qtplugin):
 
 	"""Handles the GUI aspects of the plug-in"""
 
@@ -408,7 +408,7 @@ class qtmedia_player(media_player, qtplugin.qtplugin):
 		"""
 
 		# Pass the word on to the parents
-		media_player.__init__(self, name, experiment, string)
+		media_player_gst.__init__(self, name, experiment, string)
 		qtplugin.qtplugin.__init__(self, __file__)
 
 	def init_edit_widget(self):
