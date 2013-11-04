@@ -25,7 +25,7 @@ from libqtopensesame import qtplugin
 from libqtopensesame import pool_widget
 
 # Used to throw exceptions
-from libopensesame import exceptions
+from libopensesame.exceptions import osexception
 
 import libopensesame.generic_response
 
@@ -44,6 +44,69 @@ import gst
 import pygame
 from OpenGL.GL import *
 from OpenGL.GLU import *
+
+
+class legacy_handler:
+	def __init__(self, main_player, screen):
+		self.main_player = main_player
+		self.screen = screen
+	
+	def handle_videoframe(self, appsink):
+		"""
+		Callback method for handling a video frame
+
+		Arguments:
+		appsink -- the sink to which gst supplies the frame (not used)
+		"""	
+		
+		buffer = appsink.emit('pull-buffer')			
+		img = pygame.image.frombuffer(buffer.data, self.main_player.vidsize, "RGB")		
+		self.screen.blit(img, self.main_player.vidPos)		
+		pygame.display.flip()
+		self.main_player.frameNo += 1
+	
+	def handle_events(self):
+		pass
+		
+class psychopy_handler:
+	def __init__(self, main_player, screen):
+		self.main_player = main_player
+		self.screen = screen
+	
+	def handle_videoframe(self, appsink):
+		"""
+		Callback method for handling a video frame
+
+		Arguments:
+		appsink -- the sink to which gst supplies the frame (not used)
+		"""	
+		buffer = appsink.emit('pull-buffer')				
+		self.main_player.frameNo += 1
+	
+	def handle_events(self):
+		pass
+	
+	
+class expyriment_handler:
+	def __init__(self, main_player, screen):
+		self.main_player = main_player
+		self.screen = screen
+	
+	def handle_videoframe(self, appsink):
+		"""
+		Callback method for handling a video frame
+
+		Arguments:
+		appsink -- the sink to which gst supplies the frame (not used)
+		"""	
+		
+		buffer = appsink.emit('pull-buffer')					
+		self.main_player.frameNo += 1
+	
+	def handle_events(self):
+		pass
+	
+	
 
 class media_player_gst(item.item, libopensesame.generic_response.generic_response):
 
@@ -117,8 +180,12 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		item.item.prepare(self)
 
 		# Give a sensible error message if the proper back-end has not been selected
-		if not self.has("canvas_backend") or self.get("canvas_backend") != "legacy":
-			raise exceptions.runtime_error("The media_player plug-in requires the legacy back-end. Sorry!")
+		if self.has("canvas_backend"):
+			if self.get("canvas_backend") == "legacy":				
+				self.frame_handler = legacy_handler(self, self.experiment.surface)
+		
+		else:
+			raise osexception("The media_player plug-in requires the legacy back-end. Sorry!")
 
 		# Byte-compile the event handling code (if any)
 		if self.event_handler.strip() != "":
@@ -138,7 +205,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		
 		# Open the video file
 		if not os.path.exists(path) or str(self.eval_text("video_src")).strip() == "":
-			raise exceptions.runtime_error("Video file '%s' was not found in video_player '%s' (or no video file was specified)." % (os.path.basename(path), self.name))
+			raise osexception("Video file '%s' was not found in video_player '%s' (or no video file was specified)." % (os.path.basename(path), self.name))
 		
 		if self.experiment.debug:
 			print "media_player.prepare(): loading '%s'" % path
@@ -160,8 +227,15 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		file -- the path tp the file to be played
 		"""
 		# Info required for color space conversion (YUV->RGB)
-		self.caps = gst.Caps("video/x-raw-rgb")
-		#self.caps = gst.Caps("video/x-raw-rgb, width=1920, height=1080")
+		# masks are necessary for correct display on unix systems
+		self._VIDEO_CAPS = ','.join([
+		    'video/x-raw-rgb',
+		    'red_mask=(int)0xff0000',
+		    'green_mask=(int)0x00ff00',
+		    'blue_mask=(int)0x0000ff',
+		])
+
+		caps = gst.Caps(self._VIDEO_CAPS)
 
 		# Create videoplayer and load URI
 		self.player = gst.element_factory_make("playbin2", "player")		
@@ -172,11 +246,11 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		
 		# Reroute frame output to Python
 		self._videosink = gst.element_factory_make('appsink', 'videosink')		
-		self._videosink.set_property('caps', self.caps)
+		self._videosink.set_property('caps', caps)
 		self._videosink.set_property('async', True)
 		self._videosink.set_property('drop', True)
 		self._videosink.set_property('emit-signals', True)
-		self._videosink.connect('new-buffer', self.__handle_videoframe)		
+		self._videosink.connect('new-buffer', self.frame_handler.handle_videoframe)		
 		self.player.set_property('video-sink', self._videosink)
 
 		# Set functions for handling player messages
@@ -193,49 +267,39 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 			pads = self._videosink.pads()			
 			for pad in pads:			
 				caps = pad.get_negotiated_caps()[0]
+				for name in caps.keys():
+					print "{0}: {1}".format(name,caps[name])
 				self.vidsize = caps['width'], caps['height']
+
 		else:
-			raise exceptions.runtime_error("Failed to retrieve video size")
+			raise osexception("Failed to retrieve video size")
 	
 		if self.playaudio == "no":
 			self.player.set_property("mute",True)				
-			
-		self.screen = self.experiment.surface
+					
 		self.file_loaded = True
 		
 		if self.fullscreen == "yes":
-			self.destsize = self.calcScaledRes((self.experiment.width,self.experiment.height), self.vidsize)	
-			print self.destsize
-		else:
-			self.destsize = self.vidsize
-		self.vidPos = ((self.experiment.width - self.destsize[0]) / 2, (self.experiment.height - self.destsize[1]) / 2)		
-			
+			self.player.set_state(gst.STATE_NULL)
+			destsize = self.calcScaledRes((self.experiment.width,self.experiment.height), self.vidsize)				
+			self.__adjust_videosize(destsize)
+			self.player.set_state(gst.STATE_PAUSED)
 
-	def __handle_videoframe(self, appsink):
-		"""
-		Callback method for handling a video frame
-
-		Arguments:
-		appsink -- the sink to which gst supplies the frame (not used)
-		"""		
-		buffer = self._videosink.emit('pull-buffer')		
-
-		img = pygame.image.frombuffer(buffer.data, self.vidsize, "RGB")
+		self.vidPos = ((self.experiment.width - self.vidsize[0]) / 2, (self.experiment.height - self.vidsize[1]) / 2)		
 		
-		# Upscale image to new surfuace if presented fullscreen
-		# Create the surface if it doesn't exist yet
-		if self.fullscreen == "yes":		
-			if not hasattr(self,"destSurf"):				
-				self.destSurf = pygame.transform.scale(img, self.destsize)
-			else:
-				pygame.transform.scale(img, self.destsize, self.destSurf)
-			self.screen.blit(self.destSurf, self.vidPos)
-		else:
-			self.screen.blit(img, self.vidPos)
-
-		pygame.display.flip()
+		# Calculate required buffer length		
+		self.ReqBufferLength = self.vidsize[0] * self.vidsize[1] * 3		
 		
-		self.frameNo += 1
+	def __adjust_videosize(self, (w,h)):				
+		newcaps = self._VIDEO_CAPS + ', width=%d, height=%d' % (w,h)		
+		caps = gst.Caps(newcaps)
+		self._videosink.set_property('caps', caps)
+		
+		# Preroll movie to get dimension data
+		self.vidsize = (w,h)
+		self.ReqBufferLength = w * h * 3	
+
+	
 		
 	def __on_message(self, bus, message):
 		t = message.type		
@@ -246,7 +310,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 			self.player.set_state(gst.STATE_NULL)
 			err, debug = message.parse_error()
 			self.gst_loop.quit()
-			raise exceptions.runtime_error("Gst Error: %s" % err, debug)			
+			raise osexception("Gst Error: %s" % err, debug)			
 
 	def pause(self):
 
@@ -275,7 +339,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		try:
 			exec(self._event_handler)
 		except Exception as e:
-			raise exceptions.runtime_error("Error while executing event handling code: %s" % e)
+			raise osexception("Error while executing event handling code: %s" % e)
 
 		if type(continue_playback) != bool:
 			continue_playback = False
@@ -304,8 +368,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 			self.experiment.end_response_interval = self.experiment.start_response_interval
 		self.experiment.response = None
 
-		if self.file_loaded:	
-			self.screen.fill((0,0,0))
+		if self.file_loaded:				
 			# Start gst loop (which listens for events from the player)
 			thread.start_new_thread(self.gst_loop.run, ())						
 			
@@ -343,7 +406,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 
 							# Catch escape presses
 							if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-								raise exceptions.runtime_error("The escape key was pressed")
+								raise osexception("The escape key was pressed")
 
 				# Advance to the next frame if the player isn't paused
 				if not self.paused:					
@@ -360,14 +423,13 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 				if not self.gst_loop.is_running():
 					self.playing = False
 				elif not self.playing and self.gst_loop.is_running():
-					self.player.set_state(gst.STATE_NULL)
-					self.gst_loop.quit()
+					self.closeStreams()
 
 			libopensesame.generic_response.generic_response.response_bookkeeping(self)			
 			return True
 
 		else:
-			raise exceptions.runtime_error("No video loaded")
+			raise osexception("No video loaded")
 			return False
 
 	def closeStreams(self):
