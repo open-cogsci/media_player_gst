@@ -42,15 +42,14 @@ import gst
 
 # Rendering components
 import pygame
-from OpenGL.GL import *
-from OpenGL.GLU import *
+import pyglet
 
 
 class legacy_handler:
 	def __init__(self, main_player, screen):
 		self.main_player = main_player
 		self.screen = screen
-	
+		
 	def handle_videoframe(self, appsink):
 		"""
 		Callback method for handling a video frame
@@ -70,8 +69,10 @@ class legacy_handler:
 		
 class psychopy_handler:
 	def __init__(self, main_player, screen):
+		pyglet.options['debug_gl'] = False		
+		import psychopy
 		self.main_player = main_player
-		self.screen = screen
+		self.win = screen
 	
 	def handle_videoframe(self, appsink):
 		"""
@@ -80,8 +81,26 @@ class psychopy_handler:
 		Arguments:
 		appsink -- the sink to which gst supplies the frame (not used)
 		"""	
-		buffer = appsink.emit('pull-buffer')				
-		self.main_player.frameNo += 1
+		buffer = appsink.emit('pull-buffer')
+		(w,h) = self.main_player.vidsize
+		(x,y) = self.main_player.vidPos
+		frameTexture = pyglet.image.ImageData(w,h,"RGB",buffer.data).get_texture()
+		
+		# Necessary? See if runs without
+		#self._selectWindow(win)		
+		GL = pyglet.gl
+		GL.glActiveTexture(GL.GL_TEXTURE0)
+		GL.glEnable(GL.GL_TEXTURE_2D)
+		GL.glColor4f(0,0,0,1)
+		GL.glPushMatrix()
+		
+		#do scaling
+		#scale the viewport to the appropriate size
+		self.win.setScale(self._winScale)
+		#move to centre of stimulus and rotate
+		GL.glTranslatef(self._posRendered[0],self._posRendered[1],0)
+		frameTexture.blit(x,y,0,w,h)
+		GL.glPopMatrix()
 	
 	def handle_events(self):
 		pass
@@ -89,6 +108,7 @@ class psychopy_handler:
 	
 class expyriment_handler:
 	def __init__(self, main_player, screen):
+		import OpenGL.GL as GL
 		self.main_player = main_player
 		self.screen = screen
 	
@@ -183,6 +203,8 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		if self.has("canvas_backend"):
 			if self.get("canvas_backend") == "legacy":				
 				self.frame_handler = legacy_handler(self, self.experiment.surface)
+			if self.get("canvas_backend") == "psycho":				
+				self.frame_handler = psychopy_handler(self, self.experiment.window)
 		
 		else:
 			raise osexception("The media_player plug-in requires the legacy back-end. Sorry!")
@@ -385,40 +407,40 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 			self.player.set_state(gst.STATE_PLAYING)			
 						
 			self.playing = True
-			startTime = pygame.time.get_ticks()
+#			startTime = pygame.time.get_ticks()
 			while self.playing:
-				if self._event_handler_always:
-					self.playing = self.handleEvent()
-				else:
-					# Process all events
-					for event in pygame.event.get():
-						if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
-							if self._event_handler != None:
-								self.playing = self.handleEvent(event)
-							elif event.type == pygame.KEYDOWN and self.duration == "keypress":
-								self.playing = False
-								self.experiment.response = pygame.key.name(event.key)
-								self.experiment.end_response_interval = pygame.time.get_ticks()
-							elif event.type == pygame.MOUSEBUTTONDOWN and self.duration == "mouseclick":
-								self.playing = False
-								self.experiment.response = event.button
-								self.experiment.end_response_interval = pygame.time.get_ticks()
-
-							# Catch escape presses
-							if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-								raise osexception("The escape key was pressed")
-
-				# Advance to the next frame if the player isn't paused
-				if not self.paused:					
-					if self.sendInfoToEyelink == "yes" and hasattr(self.experiment,"eyelink") and self.experiment.eyelink.connected():
-						frame_no = self.frameNo
-						self.experiment.eyelink.log("videoframe %s" % frame_no)
-						self.experiment.eyelink.status_msg("videoframe %s" % frame_no )
-
-					# Check if max duration has been set, and exit if exceeded
-					if type(self.duration) == int:
-						if pygame.time.get_ticks() - startTime > (self.duration*1000):
-							self.playing = False
+#				if self._event_handler_always:
+#					self.playing = self.handleEvent()
+#				else:
+#					# Process all events
+#					for event in pygame.event.get():
+#						if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
+#							if self._event_handler != None:
+#								self.playing = self.handleEvent(event)
+#							elif event.type == pygame.KEYDOWN and self.duration == "keypress":
+#								self.playing = False
+#								self.experiment.response = pygame.key.name(event.key)
+#								self.experiment.end_response_interval = pygame.time.get_ticks()
+#							elif event.type == pygame.MOUSEBUTTONDOWN and self.duration == "mouseclick":
+#								self.playing = False
+#								self.experiment.response = event.button
+#								self.experiment.end_response_interval = pygame.time.get_ticks()
+#
+#							# Catch escape presses
+#							if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+#								raise osexception("The escape key was pressed")
+#
+#				# Advance to the next frame if the player isn't paused
+#				if not self.paused:					
+#					if self.sendInfoToEyelink == "yes" and hasattr(self.experiment,"eyelink") and self.experiment.eyelink.connected():
+#						frame_no = self.frameNo
+#						self.experiment.eyelink.log("videoframe %s" % frame_no)
+#						self.experiment.eyelink.status_msg("videoframe %s" % frame_no )
+#
+#					# Check if max duration has been set, and exit if exceeded
+#					if type(self.duration) == int:
+#						if pygame.time.get_ticks() - startTime > (self.duration*1000):
+#							self.playing = False
 
 				if not self.gst_loop.is_running():
 					self.playing = False
