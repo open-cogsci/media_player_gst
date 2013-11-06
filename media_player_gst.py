@@ -32,6 +32,7 @@ import libopensesame.generic_response
 import os
 import sys
 import thread
+import time
 import urlparse, urllib
 
 # Gstreamer componentes
@@ -43,36 +44,114 @@ import gst
 # Rendering components
 import pygame
 import pyglet
+import psychopy
+
 
 
 class legacy_handler:
-	def __init__(self, main_player, screen):
+	def __init__(self, main_player, screen, custom_event_code = None):
 		self.main_player = main_player
 		self.screen = screen
+		self.custom_event_code = custom_event_code
 		
 	def handle_videoframe(self, appsink):
 		"""
 		Callback method for handling a video frame
 
 		Arguments:
-		appsink -- the sink to which gst supplies the frame (not used)
+		appsink -- the sink to which gst supplies the frame
 		"""	
 		
 		buffer = appsink.emit('pull-buffer')			
 		img = pygame.image.frombuffer(buffer.data, self.main_player.vidsize, "RGB")		
-		self.screen.blit(img, self.main_player.vidPos)		
-		pygame.display.flip()
-		self.main_player.frameNo += 1
-	
-	def handle_events(self):
+		self.screen.blit(img, self.main_player.vidPos)	
+		pygame.display.flip()			
+		self.main_player.frame_no += 1
+		
+	def draw_buffer(self):
 		pass
+	
+	def process_user_input(self):
+		# Process all events
+		continue_playback = True
+	
+		for event in pygame.event.get():
+			if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
+				if self.custom_event_code != None:
+					if event.type == pygame.KEYDOWN:
+						continue_playback = self.process_user_input_customized(("key", pygame.key.name(event.key)))
+					elif event.type == pygame.MOUSEBUTTONDOWN:
+						continue_playback = self.process_user_input_customized(("mouse", event.button))						
+				elif event.type == pygame.KEYDOWN and self.main_player.duration == "keypress":					
+					self.main_player.experiment.response = pygame.key.name(event.key)
+					self.main_player.experiment.end_response_interval = pygame.time.get_ticks()
+					continue_playback = False
+				elif event.type == pygame.MOUSEBUTTONDOWN and self.main_player.duration == "mouseclick":					
+					self.main_player.experiment.response = event.button
+					self.main_player.experiment.end_response_interval = pygame.time.get_ticks()
+					continue_playback = False
+		
+				# Catch escape presses
+				if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+					self.main_player.close_streams()
+					raise osexception("The escape key was pressed")
+		return continue_playback
+					
+	def process_user_input_customized(self, event=None):
+
+		"""
+		Allows the user to insert custom code. Code is stored in the event_handler variable.
+
+		Arguments:
+		event -- a tuple containing the type of event (key or mouse button press)
+			   and the value of the key or mouse button pressed (which character or mouse button)
+		"""
+
+		# Listen for escape presses and collect keyboard and mouse presses if no event has been passed to the function
+		# If only one button press or mouse press is in the event que, the resulting event variable will just be a tuple
+		# Otherwise the collected event tuples will be put in a list, which the user can iterate through with his custom code
+		# This way the user will have either
+		#  1. a single tuple with the data of the event (either collected here from the event que or passed from process_user_input)
+		#  2. a list of tuples containing all key and mouse presses that have been pulled from the event queue		
+		
+		if event is None:
+			events = pygame.event.get()
+			event = []  # List to contain collected info on key and mouse presses			
+			for ev in events:
+				if ev.type == pygame.KEYDOWN or ev.type == pygame.MOUSEBUTTONDOWN:
+					# Exit on ESC press
+					if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+						self.main_player.close_streams()
+						raise osexception("The escape key was pressed")
+					elif event.type == pygame.KEYDOWN:
+						event.append(("key", pygame.key.name(event.key)))
+					elif event.type == pygame.MOUSEBUTTONDOWN:
+						event.append(("mouse", event.button))
+			# If there is only one tuple in the list of collected events, take it out of the list 
+			if len(event) == 1:
+				event = event[0]
+																
+		continue_playback = True
+
+		try:
+			exec(self.custom_event_code)
+		except Exception as e:
+			self.main_player.close_streams()
+			raise osexception("Error while executing event handling code: %s" % e)
+
+		if type(continue_playback) != bool:
+			continue_playback = False
+
+		return continue_playback
 		
 class psychopy_handler:
-	def __init__(self, main_player, screen):
+	def __init__(self, main_player, screen, custom_event_code = None):
 		pyglet.options['debug_gl'] = False		
-		import psychopy
+		
 		self.main_player = main_player
 		self.win = screen
+		global currWindow
+		currWindow = screen
 	
 	def handle_videoframe(self, appsink):
 		"""
@@ -82,28 +161,103 @@ class psychopy_handler:
 		appsink -- the sink to which gst supplies the frame (not used)
 		"""	
 		buffer = appsink.emit('pull-buffer')
+		
+		print self.win.winType
+		print self.win.winHandle
+		print "==================="		
+		
 		(w,h) = self.main_player.vidsize
 		(x,y) = self.main_player.vidPos
-		frameTexture = pyglet.image.ImageData(w,h,"RGB",buffer.data).get_texture()
+		img = pyglet.image.ImageData(w,h,"RGB",buffer.data)
+		
+#		if not self.main_player.frame_no % 10:
+#			img.save("C:/Temp/frame " + str(self.main_player.frame_no) + ".png")
+		
+		self._sizeRendered = (w,h)
+		self._posRendered = (x,y)
 		
 		# Necessary? See if runs without
-		#self._selectWindow(win)		
+		# self._selectWindow(win)		
+		# self.win.winHandle.switch_to()
+		
 		GL = pyglet.gl
 		GL.glActiveTexture(GL.GL_TEXTURE0)
-		GL.glEnable(GL.GL_TEXTURE_2D)
+		GL.glEnable(GL.GL_TEXTURE_2D)		
 		GL.glColor4f(0,0,0,1)
 		GL.glPushMatrix()
 		
 		#do scaling
 		#scale the viewport to the appropriate size
-		self.win.setScale(self._winScale)
+		self.win.setScale('pix')
 		#move to centre of stimulus and rotate
 		GL.glTranslatef(self._posRendered[0],self._posRendered[1],0)
-		frameTexture.blit(x,y,0,w,h)
-		GL.glPopMatrix()
-	
-	def handle_events(self):
+		#img.get_texture().blit(x,y,0,w,h)	
+		img.blit(x,y)
+		
+		flipBitX = False
+		flipBitY = False
+
+#		img.get_texture().blit(
+#                -self._sizeRendered[0]/2.0*flipBitX,
+#                -self._sizeRendered[1]/2.0*flipBitY,
+#                width=self._sizeRendered[0]*flipBitX,
+#                height=self._sizeRendered[1]*flipBitY,
+#                z=0)		
+		
+		GL.glPopMatrix()					
+		self.main_player.frame_no += 1		
+		self.win.flip()
+		
+	def draw_buffer(self):
 		pass
+		
+#	def draw(self, win=None):
+#	        """Draw the current frame to a particular visual.Window (or to the
+#	        default win for this object if not specified). The current position in
+#	        the movie will be determined automatically.
+#	
+#	        This method should be called on every frame that the movie is meant to
+#	        appear"""
+#	
+#	
+#	        if win==None: win=self.win
+#	        self._selectWindow(win)
+#	
+#	        #make sure that textures are on and GL_TEXTURE0 is active
+#	        GL.glActiveTexture(GL.GL_TEXTURE0)
+#	        GL.glEnable(GL.GL_TEXTURE_2D)
+#	        if pyglet.version>='1.2': #for pyglet 1.1.4 this was done via media.dispatch_events
+#	            self._player.update_texture()
+#	        frameTexture = self._player.get_texture()
+#	        if frameTexture==None:
+#	            return
+#	
+#	        desiredRGB = self._getDesiredRGB(self.rgb, self.colorSpace, 1)  #Contrast=1
+#	        GL.glColor4f(desiredRGB[0],desiredRGB[1],desiredRGB[2],self.opacity)
+#	        GL.glPushMatrix()
+#	        #do scaling
+#	        #scale the viewport to the appropriate size
+#	        self.win.setScale(self._winScale)
+#	        #move to centre of stimulus and rotate
+#	        GL.glTranslatef(self._posRendered[0],self._posRendered[1],0)
+#	        GL.glRotatef(-self.ori,0.0,0.0,1.0)
+#	        flipBitX = 1-self.flipHoriz*2
+#	        flipBitY = 1-self.flipVert*2
+#	        frameTexture.blit(
+#	                -self._sizeRendered[0]/2.0*flipBitX,
+#	                -self._sizeRendered[1]/2.0*flipBitY,
+#	                width=self._sizeRendered[0]*flipBitX,
+#	                height=self._sizeRendered[1]*flipBitY,
+#	                z=0)
+#	        GL.glPopMatrix()
+
+
+		
+	def process_user_input(self):
+		return True
+		
+	def process_user_input_customized(self, event=None):
+		return True
 	
 	
 class expyriment_handler:
@@ -123,8 +277,11 @@ class expyriment_handler:
 		buffer = appsink.emit('pull-buffer')					
 		self.main_player.frameNo += 1
 	
-	def handle_events(self):
-		pass
+	def process_user_input(self):
+		return True
+		
+	def process_user_input_customized(self, event=None):
+		return True
 	
 	
 
@@ -160,14 +317,14 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		self.video_src = ""
 		self.sendInfoToEyelink = "yes"
 		self.event_handler = ""
-		self.frameNo = 0
+		self.frame_no = 0
 		self.event_handler_trigger = "on keypress"
 
 		# The parent handles the rest of the construction
 		item.item.__init__(self, name, experiment, string)
 
 		# Indicate function for clean up that is run after the experiment finishes
-		self.experiment.cleanup_functions.append(self.closeStreams)
+		self.experiment.cleanup_functions.append(self.close_streams)
 	
 	
 	def calcScaledRes(self, screen_res, image_res):
@@ -199,27 +356,27 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		# Pass the word on to the parent
 		item.item.prepare(self)
 
-		# Give a sensible error message if the proper back-end has not been selected
-		if self.has("canvas_backend"):
-			if self.get("canvas_backend") == "legacy":				
-				self.frame_handler = legacy_handler(self, self.experiment.surface)
-			if self.get("canvas_backend") == "psycho":				
-				self.frame_handler = psychopy_handler(self, self.experiment.window)
-		
-		else:
-			raise osexception("The media_player plug-in requires the legacy back-end. Sorry!")
-
 		# Byte-compile the event handling code (if any)
 		if self.event_handler.strip() != "":
-			self._event_handler = compile(self.event_handler, "<string>", "exec")
+			custom_event_handler = compile(self.event_handler, "<string>", "exec")
 		else:
-			self._event_handler = None
+			custom_event_handler = None
 
 		# Determine when the event handler should be called
 		if self.event_handler_trigger == "on keypress":
 			self._event_handler_always = False
 		else:
 			self._event_handler_always = True
+			
+		# Set handler of frames and user unput
+		if self.has("canvas_backend"):
+			if self.get("canvas_backend") == "legacy":				
+				self.handler = legacy_handler(self, self.experiment.surface, custom_event_handler)
+			if self.get("canvas_backend") == "psycho":				
+				self.handler = psychopy_handler(self, self.experiment.window, custom_event_handler)
+		else:
+			# Give a sensible error message if the proper back-end has not been selected
+			raise osexception("The media_player plug-in requires the legacy back-end. Sorry!")
 
 		# Find the full path to the video file. This will point to some
 		# temporary folder where the file pool has been placed
@@ -236,8 +393,8 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		path = os.path.abspath(path)
 		path = urlparse.urljoin('file:', urllib.pathname2url(path))
 		
-		self.load(path)
-
+		self.load(path)				
+	
 		# Report success
 		return True
 
@@ -269,10 +426,10 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		# Reroute frame output to Python
 		self._videosink = gst.element_factory_make('appsink', 'videosink')		
 		self._videosink.set_property('caps', caps)
-		self._videosink.set_property('async', True)
+		self._videosink.set_property('sync', True)
 		self._videosink.set_property('drop', True)
 		self._videosink.set_property('emit-signals', True)
-		self._videosink.connect('new-buffer', self.frame_handler.handle_videoframe)		
+		self._videosink.connect('new-buffer', self.handler.handle_videoframe)		
 		self.player.set_property('video-sink', self._videosink)
 
 		# Set functions for handling player messages
@@ -320,8 +477,6 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		# Preroll movie to get dimension data
 		self.vidsize = (w,h)
 		self.ReqBufferLength = w * h * 3	
-
-	
 		
 	def __on_message(self, bus, message):
 		t = message.type		
@@ -335,42 +490,19 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 			raise osexception("Gst Error: %s" % err, debug)			
 
 	def pause(self):
-
 		"""Pauses playback"""
-
-		self.paused = True
-		self.player.set_state(gst.STATE_PAUSED)
+		if not self.paused:
+			self.paused = True
+			self.player.set_state(gst.STATE_PAUSED)
 
 	def unpause(self):
-
 		"""Continues playback"""
-
-		self.paused = False
-		self.player.set_state(gst.STATE_PLAYING)
-
-	def handleEvent(self, event = None):
-
-		"""
-		Allows the user to insert custom code. Code is stored in the event_handler variable.
-
-		Arguments:
-		event -- a dummy argument passed by the signal handler
-		"""
-		continue_playback = True
-
-		try:
-			exec(self._event_handler)
-		except Exception as e:
-			raise osexception("Error while executing event handling code: %s" % e)
-
-		if type(continue_playback) != bool:
-			continue_playback = False
-
-		return continue_playback
+		if self.paused:
+			self.paused = False
+			self.player.set_state(gst.STATE_PLAYING)
 
 	
 	def run(self):
-
 		"""
 		Starts the playback of the video file. You can specify an optional callable object to handle events between frames (like keypresses)
 		This function needs to return a boolean, because it determines if playback is continued or stopped. If no callable object is provided
@@ -396,56 +528,38 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 			
 			# Wait for gst loop to start running, but do so for a max of 50ms		
 			counter = 0
-			while not self.gst_loop.is_running(): 		
-				pygame.time.wait(5)
+			while not self.gst_loop.is_running():
+				time.sleep(0.005)
 				counter += 1
 				if counter > 10:
-					print >> sys.stderr, "ERROR: gst loop failed to start"
-					sys.exit(1)
+					raise osexception("ERROR: gst loop failed to start")
 			
 			# Signal player to start video playback
 			self.player.set_state(gst.STATE_PLAYING)			
 						
 			self.playing = True
-#			startTime = pygame.time.get_ticks()
-			while self.playing:
-#				if self._event_handler_always:
-#					self.playing = self.handleEvent()
-#				else:
-#					# Process all events
-#					for event in pygame.event.get():
-#						if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
-#							if self._event_handler != None:
-#								self.playing = self.handleEvent(event)
-#							elif event.type == pygame.KEYDOWN and self.duration == "keypress":
-#								self.playing = False
-#								self.experiment.response = pygame.key.name(event.key)
-#								self.experiment.end_response_interval = pygame.time.get_ticks()
-#							elif event.type == pygame.MOUSEBUTTONDOWN and self.duration == "mouseclick":
-#								self.playing = False
-#								self.experiment.response = event.button
-#								self.experiment.end_response_interval = pygame.time.get_ticks()
-#
-#							# Catch escape presses
-#							if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-#								raise osexception("The escape key was pressed")
-#
-#				# Advance to the next frame if the player isn't paused
-#				if not self.paused:					
-#					if self.sendInfoToEyelink == "yes" and hasattr(self.experiment,"eyelink") and self.experiment.eyelink.connected():
-#						frame_no = self.frameNo
-#						self.experiment.eyelink.log("videoframe %s" % frame_no)
-#						self.experiment.eyelink.status_msg("videoframe %s" % frame_no )
-#
-#					# Check if max duration has been set, and exit if exceeded
-#					if type(self.duration) == int:
-#						if pygame.time.get_ticks() - startTime > (self.duration*1000):
-#							self.playing = False
+			start_time = time.time()
 
+			while self.playing:
+				if self._event_handler_always:
+					self.playing = self.handler.process_user_input_customized()
+				else:
+					self.playing = self.handler.process_user_input()
+			
+				if not self.paused:					
+					if self.sendInfoToEyelink == "yes" and hasattr(self.experiment,"eyelink") and self.experiment.eyelink.connected():						
+						self.experiment.eyelink.log("videoframe %s" % self.frame_no)
+						self.experiment.eyelink.status_msg("videoframe %s" % self.frame_no )
+
+					# Check if max duration has been set, and exit if exceeded
+					if type(self.duration) == int:
+						if time.time() - start_time > self.duration:
+							self.playing = False
+								
 				if not self.gst_loop.is_running():
 					self.playing = False
 				elif not self.playing and self.gst_loop.is_running():
-					self.closeStreams()
+					self.close_streams()
 
 			libopensesame.generic_response.generic_response.response_bookkeeping(self)			
 			return True
@@ -454,7 +568,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 			raise osexception("No video loaded")
 			return False
 
-	def closeStreams(self):
+	def close_streams(self):
 	
 		"""
 		A cleanup function, to make sure that the video files are closed
@@ -462,9 +576,12 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		Returns:
 		True on success, False on failure
 		"""
-		if self.gst_loop.is_running():
-			self.player.set_state(gst.STATE_NULL)
+		if self.gst_loop.is_running():		
+			# Quit the player's main loop
 			self.gst_loop.quit()
+			# Free resources claimed by gstreamer
+			self.player.set_state(gst.STATE_NULL)
+		return True
 		
 
 	def var_info(self):
