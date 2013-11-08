@@ -30,7 +30,6 @@ from libopensesame.exceptions import osexception
 import libopensesame.generic_response
 
 import os
-import sys
 import thread
 import time
 import urlparse, urllib
@@ -44,15 +43,14 @@ import gst
 # Rendering components
 import pygame
 import pyglet
-import psychopy
-
+GL = pyglet.gl
 
 
 class legacy_handler:
 	def __init__(self, main_player, screen, custom_event_code = None):
 		self.main_player = main_player
 		self.screen = screen
-		self.custom_event_code = custom_event_code
+		self.custom_event_code = custom_event_code			
 		
 	def handle_videoframe(self, appsink):
 		"""
@@ -63,9 +61,12 @@ class legacy_handler:
 		"""	
 		
 		buffer = appsink.emit('pull-buffer')			
-		img = pygame.image.frombuffer(buffer.data, self.main_player.vidsize, "RGB")		
-		self.screen.blit(img, self.main_player.vidPos)	
-		pygame.display.flip()			
+		#img = pygame.image.frombuffer(buffer.data, self.main_player.vidsize, "RGB")		
+		#self.screen.blit(img, self.main_player.vidPos)	
+		print self.screen		
+		self.screen.write(buffer.data)	
+		
+		#pygame.display.flip()		
 		self.main_player.frame_no += 1
 		
 	def draw_buffer(self):
@@ -95,6 +96,8 @@ class legacy_handler:
 				if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
 					self.main_player.close_streams()
 					raise osexception("The escape key was pressed")
+		
+		pygame.event.pump() # Process other evenst (prevents screen lockups in windowed mode)
 		return continue_playback
 					
 	def process_user_input_customized(self, event=None):
@@ -141,17 +144,17 @@ class legacy_handler:
 
 		if type(continue_playback) != bool:
 			continue_playback = False
+		
+		
 
 		return continue_playback
 		
 class psychopy_handler:
-	def __init__(self, main_player, screen, custom_event_code = None):
-		pyglet.options['debug_gl'] = False		
-		
+	def __init__(self, main_player, screen, custom_event_code = None):	
 		self.main_player = main_player
 		self.win = screen
-		global currWindow
-		currWindow = screen
+		self.frame = None
+				
 	
 	def handle_videoframe(self, appsink):
 		"""
@@ -160,98 +163,31 @@ class psychopy_handler:
 		Arguments:
 		appsink -- the sink to which gst supplies the frame (not used)
 		"""	
-		buffer = appsink.emit('pull-buffer')
-		
-		print self.win.winType
-		print self.win.winHandle
-		print "==================="		
-		
-		(w,h) = self.main_player.vidsize
-		(x,y) = self.main_player.vidPos
-		img = pyglet.image.ImageData(w,h,"RGB",buffer.data)
-		
-#		if not self.main_player.frame_no % 10:
-#			img.save("C:/Temp/frame " + str(self.main_player.frame_no) + ".png")
-		
-		self._sizeRendered = (w,h)
-		self._posRendered = (x,y)
-		
-		# Necessary? See if runs without
-		# self._selectWindow(win)		
-		# self.win.winHandle.switch_to()
-		
-		GL = pyglet.gl
-		GL.glActiveTexture(GL.GL_TEXTURE0)
-		GL.glEnable(GL.GL_TEXTURE_2D)		
-		GL.glColor4f(0,0,0,1)
-		GL.glPushMatrix()
-		
-		#do scaling
-		#scale the viewport to the appropriate size
-		self.win.setScale('pix')
-		#move to centre of stimulus and rotate
-		GL.glTranslatef(self._posRendered[0],self._posRendered[1],0)
-		#img.get_texture().blit(x,y,0,w,h)	
-		img.blit(x,y)
-		
-		flipBitX = False
-		flipBitY = False
+		self.buffer = appsink.emit('pull-buffer')
+		self.main_player.frame_no += 1
 
-#		img.get_texture().blit(
-#                -self._sizeRendered[0]/2.0*flipBitX,
-#                -self._sizeRendered[1]/2.0*flipBitY,
-#                width=self._sizeRendered[0]*flipBitX,
-#                height=self._sizeRendered[1]*flipBitY,
-#                z=0)		
+		# Create imageData object if not yet available. Otherwise just set the
+		# data of the available object (progably faster?)
+		if self.frame is None:		
+			self.frame = pyglet.image.ImageData(self.main_player.vidsize[0], self.main_player.vidsize[1], "RGB", self.buffer.data)
+		else:
+			self.frame.set_data("RGB", self.main_player.vidsize[0] * 3, self.buffer.data)
+			
 		
-		GL.glPopMatrix()					
-		self.main_player.frame_no += 1		
+	def draw_buffer(self):												
+		if not hasattr(self,"dim"):		
+			self.dim = self.main_player.calcScaledRes((2,2), (self.main_player.experiment.width, self.main_player.experiment.height), "float")
+			print "Video dimensions: " + str(self.dim)
+						
+		GL.glLoadIdentity()		
+		GL.glTranslatef(-1, -1 + self.dim[1]/2, 0)		
+		GL.glColor4f(1,1,1,1)
+					
+		if self.frame:
+			self.frame.blit(0,1,0, self.dim[0],-self.dim[1])
+		
 		self.win.flip()
 		
-	def draw_buffer(self):
-		pass
-		
-#	def draw(self, win=None):
-#	        """Draw the current frame to a particular visual.Window (or to the
-#	        default win for this object if not specified). The current position in
-#	        the movie will be determined automatically.
-#	
-#	        This method should be called on every frame that the movie is meant to
-#	        appear"""
-#	
-#	
-#	        if win==None: win=self.win
-#	        self._selectWindow(win)
-#	
-#	        #make sure that textures are on and GL_TEXTURE0 is active
-#	        GL.glActiveTexture(GL.GL_TEXTURE0)
-#	        GL.glEnable(GL.GL_TEXTURE_2D)
-#	        if pyglet.version>='1.2': #for pyglet 1.1.4 this was done via media.dispatch_events
-#	            self._player.update_texture()
-#	        frameTexture = self._player.get_texture()
-#	        if frameTexture==None:
-#	            return
-#	
-#	        desiredRGB = self._getDesiredRGB(self.rgb, self.colorSpace, 1)  #Contrast=1
-#	        GL.glColor4f(desiredRGB[0],desiredRGB[1],desiredRGB[2],self.opacity)
-#	        GL.glPushMatrix()
-#	        #do scaling
-#	        #scale the viewport to the appropriate size
-#	        self.win.setScale(self._winScale)
-#	        #move to centre of stimulus and rotate
-#	        GL.glTranslatef(self._posRendered[0],self._posRendered[1],0)
-#	        GL.glRotatef(-self.ori,0.0,0.0,1.0)
-#	        flipBitX = 1-self.flipHoriz*2
-#	        flipBitY = 1-self.flipVert*2
-#	        frameTexture.blit(
-#	                -self._sizeRendered[0]/2.0*flipBitX,
-#	                -self._sizeRendered[1]/2.0*flipBitY,
-#	                width=self._sizeRendered[0]*flipBitX,
-#	                height=self._sizeRendered[1]*flipBitY,
-#	                z=0)
-#	        GL.glPopMatrix()
-
-
 		
 	def process_user_input(self):
 		return True
@@ -327,7 +263,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		self.experiment.cleanup_functions.append(self.close_streams)
 	
 	
-	def calcScaledRes(self, screen_res, image_res):
+	def calcScaledRes(self, screen_res, image_res, unit="int"):
 		"""Calculate image size so it fits the screen
 		Args
 			screen_res (tuple)   -  Display window size/Resolution
@@ -339,10 +275,16 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		rs = screen_res[0]/float(screen_res[1])
 		ri = image_res[0]/float(image_res[1])
 	
-		if rs > ri:
-			return (int(image_res[0] * screen_res[1]/image_res[1]), screen_res[1])
-		else:
-			return (screen_res[0], int(image_res[1]*screen_res[0]/image_res[0]))
+		if unit == "int":
+			if rs > ri:
+				return (int(image_res[0] * screen_res[1]/image_res[1]), screen_res[1])
+			else:
+				return (screen_res[0], int(image_res[1]*screen_res[0]/image_res[0]))
+		elif unit == "float":
+			if rs > ri:
+				return ((float(image_res[0]) * screen_res[1]/image_res[1]), screen_res[1])
+			else:
+				return (screen_res[0], (float(image_res[1])*screen_res[0]/image_res[0]))
 
 	def prepare(self):
 
@@ -540,26 +482,32 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 			self.playing = True
 			start_time = time.time()
 
-			while self.playing:
-				if self._event_handler_always:
-					self.playing = self.handler.process_user_input_customized()
-				else:
-					self.playing = self.handler.process_user_input()
-			
+			self.handler.screen = self.experiment.surface.get_buffer()
+			while self.playing:							
 				if not self.paused:					
+					self.handler.draw_buffer()
+					
 					if self.sendInfoToEyelink == "yes" and hasattr(self.experiment,"eyelink") and self.experiment.eyelink.connected():						
 						self.experiment.eyelink.log("videoframe %s" % self.frame_no)
 						self.experiment.eyelink.status_msg("videoframe %s" % self.frame_no )
-
-					# Check if max duration has been set, and exit if exceeded
-					if type(self.duration) == int:
-						if time.time() - start_time > self.duration:
-							self.playing = False
-								
+				
+				
+				# Determine if playback should continue and handle events
+				if type(self.duration) == int:
+					if time.time() - start_time > self.duration:
+						self.playing = False
+				elif self._event_handler_always:
+					self.playing = self.handler.process_user_input_customized()
+				else:
+					self.playing = self.handler.process_user_input()
+				
+									
 				if not self.gst_loop.is_running():
-					self.playing = False
-				elif not self.playing and self.gst_loop.is_running():
-					self.close_streams()
+					self.playing = False				
+			
+			# Clean up resources
+			self.close_streams()
+			del(self.handler.screen)
 
 			libopensesame.generic_response.generic_response.response_bookkeeping(self)			
 			return True
@@ -577,7 +525,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		True on success, False on failure
 		"""
 		if self.gst_loop.is_running():		
-			# Quit the player's main loop
+			# Quit the player's main event loop
 			self.gst_loop.quit()
 			# Free resources claimed by gstreamer
 			self.player.set_state(gst.STATE_NULL)
