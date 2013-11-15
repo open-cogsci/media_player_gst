@@ -66,17 +66,17 @@ class legacy_handler:
 		
 		self.main_player = main_player
 		self.screen = screen
-		self.custom_event_code = custom_event_code			
+		self.custom_event_code = custom_event_code		
 
 		if self.main_player.fullscreen == "yes":
 			# Already create surfaces so this does not need to be redone for every frame
 			# The time process a single frame should be much shorter this way.				
-			self.img = pygame.Surface(self.main_player.vidsize, pygame.HWSURFACE, 24, (255, 65280, 16711680, 0))
+			self.img = pygame.Surface(self.main_player.vidsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))
 			# Create pygame bufferproxy object for direct surface access
 			# This saves us from using the time consuming pygame.image.fromstring() method as the frame will be
 			# supplied in a format that can be written directly to the bufferproxy		
 			self.imgBuffer = self.img.get_buffer()
-			self.dest_surface = pygame.Surface	(self.main_player.destsize, pygame.HWSURFACE, 24, (255, 65280, 16711680, 0))		
+			self.dest_surface = pygame.Surface	(self.main_player.destsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))		
 		
 	def handle_videoframe(self, frame):
 		"""
@@ -84,8 +84,9 @@ class legacy_handler:
 
 		Arguments:
 		frame - the video frame supplied as a str/bytes object
-		"""			
-				
+		"""		
+
+		self.screen.fill(pygame.Color(str(self.main_player.experiment.background)))
 		if hasattr(self, "dest_surface"):
 			self.imgBuffer.write(frame, 0)
 			pygame.transform.scale(self.img, self.main_player.destsize, self.dest_surface)
@@ -94,7 +95,7 @@ class legacy_handler:
 			self.screen.blit(pygame.image.fromstring(frame, self.main_player.vidsize, "RGB"), self.main_player.vidPos)		
 	
 	def flip(self):
-		pygame.display.update()
+		pygame.display.flip()
 		
 	def draw_buffer(self):
 		"""
@@ -153,20 +154,28 @@ class legacy_handler:
 			events = pygame.event.get()
 			event = []  # List to contain collected info on key and mouse presses			
 			for ev in events:
-				if ev.type == pygame.KEYDOWN or ev.type == pygame.MOUSEBUTTONDOWN:
-					# Exit on ESC press
-					if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-						self.main_player.close_streams()
-						raise osexception("The escape key was pressed")
-					elif event.type == pygame.KEYDOWN:
-						event.append(("key", pygame.key.name(event.key)))
-					elif event.type == pygame.MOUSEBUTTONDOWN:
-						event.append(("mouse", event.button))
+				if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+					self.main_player.playing = False
+					raise osexception("The escape key was pressed")								
+				elif ev.type == pygame.KEYDOWN or ev.type == pygame.MOUSEBUTTONDOWN:
+					# Exit on ESC press					
+					if ev.type == pygame.KEYDOWN:
+						event.append(("key", pygame.key.name(ev.key)))
+					elif ev.type == pygame.MOUSEBUTTONDOWN:
+						event.append(("mouse", ev.button))
 			# If there is only one tuple in the list of collected events, take it out of the list 
 			if len(event) == 1:
 				event = event[0]
 																
 		continue_playback = True
+
+		frame = self.main_player.frame_no
+		scr_width = self.main_player.experiment.width
+		scr_height = self.main_player.experiment.height
+		
+		#Ease callable pause function
+		pause = self.main_player.pause
+		unpause = self.main_player.unpause
 
 		try:
 			exec(self.custom_event_code)
@@ -445,12 +454,22 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		
 	def handle_videoframe(self, appsink):
 		buffer = appsink.emit('pull-buffer')
+		
+		# Get timestamp of player
+		playtime = self.player.query_position(gst.FORMAT_TIME, None)[0]	
+
+		# increment frame counter
 		self.frame_no += 1
 		
-		try:
-			self.handler.handle_videoframe(buffer.data)
-		except Exception as e:
-			print e
+		# Send frame buffer to handler. Catch exceptions so that events can still
+		# be handled regardless of error (makes it impossible to escape experiment with ESC otherwise)
+		if playtime-buffer.timestamp < 10000000:
+			try:
+				self.handler.handle_videoframe(buffer.data)
+			except Exception as e:
+				print e
+		else:
+			return
 		
 		# Handle key and mouse presses after drawing frame to backbuffer
 		if self._event_handler_always:
