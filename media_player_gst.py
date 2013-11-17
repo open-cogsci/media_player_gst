@@ -213,7 +213,7 @@ class psychopy_handler:
 		
 	def draw_buffer(self):												
 		if not hasattr(self,"dim"):		
-			self.dim = self.main_player.calcScaledRes((2,2), (self.main_player.experiment.width, self.main_player.experiment.height), "float")
+			self.dim = self.main_player.calcScaledRes((2,2), (self.main_player.vidsize[0], self.main_player.vidsize[1]), "float")			
 						
 		GL.glLoadIdentity()		
 		GL.glTranslatef(-1, -1 + self.dim[1]/2, 0)		
@@ -308,6 +308,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		Args
 			screen_res (tuple)   -  Display window size/Resolution
 			image_res (tuple)    -  Image width and height
+			unit (string)	    -  ("int" or "float") Should the result be rounded or not?
 	
 		Returns
 			tuple - width and height of image scaled to window/screen
@@ -455,31 +456,32 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 	def handle_videoframe(self, appsink):
 		buffer = appsink.emit('pull-buffer')
 		
-		# Get timestamp of player
-		playtime = self.player.query_position(gst.FORMAT_TIME, None)[0]	
-
+		# Check if the timestamp of the buffer is not too far behind on the internal clock of the player
+		# If computer is too slow for playing HD movies for instance, we need to drop frames 'manually'
+		frameOnTime = self.player.query_position(gst.FORMAT_TIME, None)[0] - buffer.timestamp < 20000000		
+		
 		# increment frame counter
 		self.frame_no += 1
 		
-		# Send frame buffer to handler. Catch exceptions so that events can still
-		# be handled regardless of error (makes it impossible to escape experiment with ESC otherwise)
-		if playtime-buffer.timestamp < 10000000:
+		# Only draw frame to screen if timestamp is still within bounds of that of the player		
+		# Just skip the drawing otherwise (and continue until a frame comes in that is in bounds again)
+		if frameOnTime:
+			# Send frame buffer to handler. Catch exceptions so that events can still
+			# be handled regardless of error (makes it impossible to escape experiment with ESC otherwise)
 			try:
 				self.handler.handle_videoframe(buffer.data)
 			except Exception as e:
 				print e
-		else:
-			return
-		
-		# Handle key and mouse presses after drawing frame to backbuffer
-		if self._event_handler_always:
-			self.playing = self.handler.process_user_input_customized()
-		elif not self._event_handler_always:				
-			self.playing = self.handler.process_user_input()
-			
-		# Only flip buffers now, so users have the ability to draw
-		# on top of the videoframe in the custom event code
-		self.handler.flip()
+				
+			# Handle key and mouse presses after drawing frame to backbuffer
+			if self._event_handler_always:
+				self.playing = self.handler.process_user_input_customized()
+			elif not self._event_handler_always:				
+				self.playing = self.handler.process_user_input()
+				
+			# Only flip buffers now, so users have the ability to draw
+			# on top of the videoframe in the custom event code	
+			self.handler.flip()
 		
 	
 	def __adjust_videosize(self, (w,h)):				
