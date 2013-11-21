@@ -49,6 +49,7 @@ import gst
 import pygame
 import pyglet
 GL = pyglet.gl
+import psychopy
 
 
 class legacy_handler:
@@ -134,7 +135,6 @@ class legacy_handler:
 		return continue_playback
 					
 	def process_user_input_customized(self, event=None):
-
 		"""
 		Allows the user to insert custom code. Code is stored in the event_handler variable.
 
@@ -169,13 +169,17 @@ class legacy_handler:
 																
 		continue_playback = True
 
+		# Variables for user to use in custom script
 		frame = self.main_player.frame_no
 		scr_width = self.main_player.experiment.width
 		scr_height = self.main_player.experiment.height
 		
-		#Ease callable pause function
+		# Easily callable pause function
+		# Use can now simply say pause() und unpause()
 		pause = self.main_player.pause
 		unpause = self.main_player.unpause
+
+		# Add more convenience functions?
 
 		try:
 			exec(self.custom_event_code)
@@ -189,10 +193,22 @@ class legacy_handler:
 		return continue_playback
 		
 class psychopy_handler:
-	def __init__(self, main_player, screen, custom_event_code = None):	
+	def __init__(self, main_player, screen, custom_event_code = None):
+		"""
+		Constructor. Set variables to be used in rest of class.
+
+		Arguments:
+		main_player -- reference to the main_player_gst object (which should instantiate this class)
+		screen -- reference to the pygame display surface		
+
+		Keyword arguments:
+		custom_event_code -- (Compiled) code that is to be called after every frame
+		"""		
+		
 		self.main_player = main_player
 		self.win = screen
 		self.frame = None
+		self.custom_event_code = custom_event_code	
 				
 	
 	def handle_videoframe(self, frame):
@@ -200,8 +216,8 @@ class psychopy_handler:
 		Callback method for handling a video frame
 
 		Arguments:
-		appsink -- the sink to which gst supplies the frame (not used)
-		"""			
+		frame - the video frame supplied as a str/bytes object
+		"""		
 		
 		# Create imageData object if not yet available. Otherwise just set the
 		# data of the available object (progably faster?)
@@ -226,16 +242,55 @@ class psychopy_handler:
 		
 	def flip(self):
 		pass
-		#self.win.flip(clearBuffer=False)
+		#self.win.winHandle.flip()
 		
 	def pump_events(self):
 		pass
 		
-	def process_user_input(self):
-		return True
+	def process_user_input(self):		
+		# Process all events
+		continue_playback = True
+		
+		for key in psychopy.event.getKeys():		
+			if self.custom_event_code != None:
+				continue_playback = self.process_user_input_customized(("key", key))				
+			elif self.main_player.duration == "keypress":
+				self.main_player.experiment.response = key
+				self.main_player.experiment.end_response_interval = time.time()	
+				continue_playback = False
+		
+			# Catch escape presses
+			if key == "escape":
+				self.main_player.playing = False
+				raise osexception("The escape key was pressed")
+		
+		#psychopy
+		return continue_playback
+						
 		
 	def process_user_input_customized(self, event=None):
-		return True
+		"""
+		Allows the user to insert custom code. Code is stored in the event_handler variable.
+
+		Arguments:
+		event -- a tuple containing the type of event (key or mouse button press)
+			   and the value of the key or mouse button pressed (which character or mouse button)
+		"""
+		continue_playback = True		
+		
+		# Variables for user to use in custom script
+		frame = self.main_player.frame_no
+		scr_width = self.main_player.experiment.width
+		scr_height = self.main_player.experiment.height
+		
+		# Easily callable pause function
+		# Use can now simply say pause() und unpause()
+		pause = self.main_player.pause
+		unpause = self.main_player.unpause
+
+		# Add more convenience functions?		
+		
+		return continue_playback
 	
 	
 class expyriment_handler:
@@ -294,6 +349,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		self.sendInfoToEyelink = "yes"
 		self.event_handler = ""
 		self.frame_no = 0
+		self.frames_displayed = 0
 		self.event_handler_trigger = "on keypress"
 
 		# The parent handles the rest of the construction
@@ -432,7 +488,12 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 				caps = pad.get_negotiated_caps()[0]
 				for name in caps.keys():
 					print "{0}: {1}".format(name,caps[name])
-				self.vidsize = caps['width'], caps['height']
+					
+				# Video dimensions
+				self.vidsize = caps['width'], caps['height']				
+				# Frame rate
+				fps = caps["framerate"]
+				self.fps = (1.0*fps.num/fps.denom)
 
 		else:
 			raise osexception("Failed to retrieve video size")
@@ -482,6 +543,9 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 			# Only flip buffers now, so users have the ability to draw
 			# on top of the videoframe in the custom event code	
 			self.handler.flip()
+			
+			# Keep track of frames displayed to calculate real FPS
+			self.frames_displayed += 1
 		
 	
 	def __adjust_videosize(self, (w,h)):				
@@ -576,6 +640,11 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 			
 			# Clean up resources
 			self.close_streams()
+			
+			# Print real frames per second
+			fps_prop = 1.0 *self.frames_displayed/self.frame_no
+			real_fps =  self.fps * fps_prop 
+			print "Movie displayed with {0} fps ({1}% of intended {2} fps)".format(round(real_fps,2), int(fps_prop*100), round(self.fps,2))				
 
 			libopensesame.generic_response.generic_response.response_bookkeeping(self)			
 			return True
