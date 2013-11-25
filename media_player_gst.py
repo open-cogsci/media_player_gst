@@ -91,17 +91,15 @@ class legacy_handler:
 			pygame.transform.scale(self.img, self.main_player.destsize, self.dest_surface)
 			self.screen.blit(self.dest_surface, self.main_player.vidPos)
 		else:			
-			self.screen.blit(pygame.image.fromstring(frame, self.main_player.vidsize, "RGB"), self.main_player.vidPos)		
-	
-	def flip(self):
-		"""
-		Flip front and back buffer
-		"""
+			self.screen.blit(pygame.image.fromstring(frame, self.main_player.vidsize, "RGB"), self.main_player.vidPos)
 		pygame.display.flip()
+	
 		
 	def draw_buffer(self):
 		"""
 		Dummy function as the frame is already drawn in handle_videoframe()
+		This function is only necessary in the OpenGL based psychopy and expyriment backend 
+		as the buffer appararently needs to be redrawn each frame
 		"""
 		pass
 	
@@ -115,33 +113,31 @@ class legacy_handler:
 		"""
 		Process events from input devices
 		"""
-		continue_playback = True
-	
+
 		for event in pygame.event.get():
 			if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
+				# Catch escape presses
+				if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+					self.main_player.playing = False
+					raise osexception("The escape key was pressed")				
+				
 				if self.custom_event_code != None:
 					if event.type == pygame.KEYDOWN:
-						continue_playback = self.process_user_input_customized(("key", pygame.key.name(event.key)))
+						return self.process_user_input_customized(("key", pygame.key.name(event.key)))
 					elif event.type == pygame.MOUSEBUTTONDOWN:
-						continue_playback = self.process_user_input_customized(("mouse", event.button))	
+						return self.process_user_input_customized(("mouse", event.button))	
 				# Stop experiment on keypress (if indicated as stopping method)
 				elif event.type == pygame.KEYDOWN and self.main_player.duration == "keypress":					
 					self.main_player.experiment.response = pygame.key.name(event.key)
 					self.main_player.experiment.end_response_interval = pygame.time.get_ticks()
-					continue_playback = False
+					return False
 				# Stop experiment on mouse click (if indicated as stopping method)
 				elif event.type == pygame.MOUSEBUTTONDOWN and self.main_player.duration == "mouseclick":					
 					self.main_player.experiment.response = event.button
 					self.main_player.experiment.end_response_interval = pygame.time.get_ticks()
-					continue_playback = False
-		
-				# Catch escape presses
-				if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-					self.main_player.playing = False
-					raise osexception("The escape key was pressed")
-		
-		return continue_playback
-					
+					return False		
+		return True
+
 	def process_user_input_customized(self, event=None):
 		"""
 		Allows the user to insert custom code. Code is stored in the event_handler variable.
@@ -157,8 +153,7 @@ class legacy_handler:
 		# This way the user will have either
 		#  1. a single tuple with the data of the event (either collected here from the event que or passed from process_user_input)
 		#  2. a list of tuples containing all key and mouse presses that have been pulled from the event queue		
-		
-		exp = self.main_player.experiment
+				
 		if event is None:
 			events = pygame.event.get()
 			event = []  # List to contain collected info on key and mouse presses			
@@ -179,6 +174,7 @@ class legacy_handler:
 		continue_playback = True
 
 		# Variables for user to use in custom script
+		exp = self.main_player.experiment
 		frame = self.main_player.frame_no
 		scr_width = self.main_player.experiment.width
 		scr_height = self.main_player.experiment.height
@@ -188,7 +184,6 @@ class legacy_handler:
 
 		paused = self.main_player.paused # for checking if player is currently paused or not
 		pause = self.main_player.pause
-		unpause = self.main_player.unpause
 
 		# Add more convenience functions?
 
@@ -292,15 +287,7 @@ class psychopy_handler:
 		GL.glMatrixMode(GL.GL_PROJECTION)
 		GL.glPopMatrix()
 		GL.glMatrixMode(GL.GL_MODELVIEW)					
-		
-		
-	def flip(self):
-		"""
-		Dummy function for flipping the screen
-		
-		Preferably this is done after event handling, but this does not seem to be possible in psychopy
-		"""
-		pass
+				
 
 	def pump_events(self):
 		"""
@@ -311,25 +298,22 @@ class psychopy_handler:
 	def process_user_input(self):		
 		"""
 		Process events from input devices
-		"""
-
-		continue_playback = True
+		"""		
+		pressed_keys = psychopy.event.getKeys()				
 		
-		for key in psychopy.event.getKeys():		
-			if self.custom_event_code != None:
-				continue_playback = self.process_user_input_customized(("key", key))				
-			elif self.main_player.duration == "keypress":
-				self.main_player.experiment.response = key
-				self.main_player.experiment.end_response_interval = time.time()	
-				continue_playback = False
-		
+		for key in pressed_keys:				
 			# Catch escape presses
 			if key == "escape":
 				self.main_player.playing = False
-				raise osexception("The escape key was pressed")
-		
-		#psychopy
-		return continue_playback
+				raise osexception("The escape key was pressed")	
+	
+			if self.custom_event_code != None:
+				return self.process_user_input_customized(("key", key))				
+			elif self.main_player.duration == "keypress":
+				self.main_player.experiment.response = key
+				self.main_player.experiment.end_response_interval = time.time()	
+				return False		
+		return True
 						
 		
 	def process_user_input_customized(self, event=None):
@@ -369,7 +353,6 @@ class psychopy_handler:
 		# Use can now simply say pause() und unpause()
 		paused = self.main_player.paused
 		pause = self.main_player.pause
-		unpause = self.main_player.unpause
 
 		# Add more convenience functions?	
 
@@ -587,7 +570,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 				self.fps = (1.0*fps.num/fps.denom)
 
 		else:
-			raise osexception("Failed to retrieve video size")
+			raise osexception("Failed to open movie. Do you have all the necessary codecs/plugins installed?")
 	
 		if self.playaudio == "no":
 			self.player.set_property("mute",True)				
@@ -616,19 +599,8 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		# Only draw frame to screen if timestamp is still within bounds of that of the player		
 		# Just skip the drawing otherwise (and continue until a frame comes in that is in bounds again)
 		if frameOnTime:
-			# Send frame buffer to handler. Catch exceptions so that events can still
-			# be handled regardless of error (makes it impossible to escape experiment with ESC otherwise)
-			self.handler.handle_videoframe(buffer.data)
-							
-			# Handle key and mouse presses after drawing frame to backbuffer
-			if self._event_handler_always:
-				self.playing = self.handler.process_user_input_customized()
-			elif not self._event_handler_always:				
-				self.playing = self.handler.process_user_input()
-				
-			# Only flip buffers now, so users have the ability to draw
-			# on top of the videoframe in the custom event code	
-			self.handler.flip()
+			# Send frame buffer to handler.			
+			self.handler.handle_videoframe(buffer.data)						
 			
 			# Keep track of frames displayed to calculate real FPS
 			self.frames_displayed += 1
@@ -646,21 +618,14 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 			raise osexception("Gst Error: %s" % err, debug)			
 
 	def pause(self):
-		"""Pauses playback"""		
-		if not self.paused:
-			print "PAUSING"
+		if self.paused:
+			self.player.set_state(gst.STATE_PLAYING)
+			self.paused = False			
+		elif not self.paused:		
 			self.player.set_state(gst.STATE_PAUSED)
 			self.paused = True
-		print "PAUSED"
 
-	def unpause(self):
-		"""Continues playback"""		
-		if self.paused:			
-			print "UNPAUSING"
-			self.player.set_state(gst.STATE_PLAYING)
-			self.paused = False
-		print "UNPAUSED"
-
+			
 	
 	def run(self):
 		"""
@@ -695,26 +660,31 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 					raise osexception("ERROR: gst loop failed to start")
 			
 			# Signal player to start video playback
-			self.player.set_state(gst.STATE_PLAYING)			
-						
+			self.player.set_state(gst.STATE_PLAYING)		
+			
 			self.playing = True
 			self.paused = False
 			start_time = time.time()
 
-			while self.playing:							
-				if not self.paused:	
-					self.handler.draw_buffer()														
+			### Main player loop. While True, the movie is playing
+			while self.playing:
+				# Draw buffer to screen (drawing each iteration only necessary for OpenGL based backends (psychopy/expyriment))
+				self.handler.draw_buffer()	
+
+				if not self.paused:						
+					# If connected to EyeLink and indicated that frame info should be sent.												
 					if self.sendInfoToEyelink == "yes" and hasattr(self.experiment,"eyelink") and self.experiment.eyelink.connected():						
 						self.experiment.eyelink.log("videoframe %s" % self.frame_no)
 						self.experiment.eyelink.status_msg("videoframe %s" % self.frame_no )
-				else:					
-					# Do listen for events if player is paused (otherwise it might never be unpaused)
-					if self._event_handler_always:
-						self.playing = self.handler.process_user_input_customized()
-					elif not self._event_handler_always:				
-						self.playing = self.handler.process_user_input()
-								
-				# Determine if playback should continue and handle events
+				
+					
+				# Listen for events 
+				if self._event_handler_always:
+					self.playing = self.handler.process_user_input_customized()
+				elif not self._event_handler_always:				
+					self.playing = self.handler.process_user_input()
+							
+				# Determine if playback should continue when a time limit is set
 				if type(self.duration) == int:
 					if time.time() - start_time > self.duration:
 						self.playing = False
