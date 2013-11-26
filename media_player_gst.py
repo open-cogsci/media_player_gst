@@ -67,14 +67,15 @@ class legacy_handler:
 		self.screen = screen
 		self.custom_event_code = custom_event_code		
 
-		if self.main_player.fullscreen == "yes":
-			# Already create surfaces so this does not need to be redone for every frame
-			# The time process a single frame should be much shorter this way.				
-			self.img = pygame.Surface(self.main_player.vidsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))
-			# Create pygame bufferproxy object for direct surface access
-			# This saves us from using the time consuming pygame.image.fromstring() method as the frame will be
-			# supplied in a format that can be written directly to the bufferproxy		
-			self.imgBuffer = self.img.get_buffer()
+		
+		# Already create surfaces so this does not need to be redone for every frame
+		# The time process a single frame should be much shorter this way.				
+		self.img = pygame.Surface(self.main_player.vidsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))
+		# Create pygame bufferproxy object for direct surface access
+		# This saves us from using the time consuming pygame.image.fromstring() method as the frame will be
+		# supplied in a format that can be written directly to the bufferproxy		
+		self.imgBuffer = self.img.get_buffer()
+		if self.main_player.fullscreen == "yes":			
 			self.dest_surface = pygame.Surface	(self.main_player.destsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))		
 		
 	def handle_videoframe(self, frame):
@@ -86,12 +87,13 @@ class legacy_handler:
 		"""		
 
 		self.screen.fill(pygame.Color(str(self.main_player.experiment.background)))
+		self.imgBuffer.write(frame, 0)
+		
 		if hasattr(self, "dest_surface"):
-			self.imgBuffer.write(frame, 0)
 			pygame.transform.scale(self.img, self.main_player.destsize, self.dest_surface)
 			self.screen.blit(self.dest_surface, self.main_player.vidPos)
-		else:			
-			self.screen.blit(pygame.image.fromstring(frame, self.main_player.vidsize, "RGB"), self.main_player.vidPos)
+		else:	
+			self.screen.blit(self.img.copy(), self.main_player.vidPos)
 		pygame.display.flip()
 	
 		
@@ -591,7 +593,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		
 		# Check if the timestamp of the buffer is not too far behind on the internal clock of the player
 		# If computer is too slow for playing HD movies for instance, we need to drop frames 'manually'
-		frameOnTime = self.player.query_position(gst.FORMAT_TIME, None)[0] - buffer.timestamp < 20000000		
+		frameOnTime = self.player.query_position(gst.FORMAT_TIME, None)[0] - buffer.timestamp < 25000000		
 		
 		# increment frame counter
 		self.frame_no += 1
