@@ -16,17 +16,14 @@ along with OpenSesame.  If not, see <http://www.gnu.org/licenses/>.
 """
 
 import os
-if os.name == "nt":
-	os.environ['PATH'] = 'C:/gstreamer-sdk/0.10/x86/bin' + ';' + os.environ['PATH']
-
 import thread
 import time
 import urlparse, urllib
 
-# Will be inherited by video_player
+# Will be inherited by media_player_gst
 from libopensesame import item
 
-# Will be inherited by qtvideo_player
+# Will be inherited by qtmedia_player_gst
 from libqtopensesame import qtplugin
 
 # Used to access the file pool
@@ -37,7 +34,11 @@ from libopensesame.exceptions import osexception
 
 import libopensesame.generic_response
 
-# Gstreamer componentes
+# Gstreamer components
+# Add path to Gstreamer framework (if installed to default directory)
+if os.name == "nt":
+	os.environ['PATH'] = 'C:/gstreamer-sdk/0.10/x86/bin' + ';' + os.environ['PATH']
+	
 import gobject
 import pygst
 pygst.require("0.10")
@@ -50,7 +51,13 @@ GL = pyglet.gl
 import psychopy
 import ctypes
 
-class legacy_handler:
+
+class pygame_handler:
+	"""
+	Superclass for both the legacy and expyriment hanlders. Both these backends are based on pygame, so should have 
+	the same event handling methods. This way they only need to be defined once for both classes.
+	"""
+	
 	def __init__(self, main_player, screen, custom_event_code = None):
 		"""
 		Constructor. Set variables to be used in rest of class.
@@ -62,54 +69,26 @@ class legacy_handler:
 		Keyword arguments:
 		custom_event_code -- (Compiled) code that is to be called after every frame
 		"""		
-		
 		self.main_player = main_player
 		self.screen = screen
-		self.custom_event_code = custom_event_code		
-
-		
-		# Already create surfaces so this does not need to be redone for every frame
-		# The time process a single frame should be much shorter this way.				
-		self.img = pygame.Surface(self.main_player.vidsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))
-		# Create pygame bufferproxy object for direct surface access
-		# This saves us from using the time consuming pygame.image.fromstring() method as the frame will be
-		# supplied in a format that can be written directly to the bufferproxy		
-		self.imgBuffer = self.img.get_buffer()
-		if self.main_player.fullscreen == "yes":			
-			self.dest_surface = pygame.Surface	(self.main_player.destsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))		
-		
-	def handle_videoframe(self, frame):
-		"""
-		Callback method for handling a video frame
-
-		Arguments:
-		frame - the video frame supplied as a str/bytes object
-		"""		
-
-		self.screen.fill(pygame.Color(str(self.main_player.experiment.background)))
-		self.imgBuffer.write(frame, 0)
-		
-		if hasattr(self, "dest_surface"):
-			pygame.transform.scale(self.img, self.main_player.destsize, self.dest_surface)
-			self.screen.blit(self.dest_surface, self.main_player.vidPos)
-		else:	
-			self.screen.blit(self.img.copy(), self.main_player.vidPos)
-		pygame.display.flip()
+		self.custom_event_code = custom_event_code	
 	
-		
+	
 	def draw_buffer(self):
 		"""
 		Dummy function as the frame is already drawn in handle_videoframe()
 		This function is only necessary in the OpenGL based psychopy and expyriment backend 
 		as the buffer appararently needs to be redrawn each frame
 		"""
-		pass
+		pass	
+	
 	
 	def pump_events(self):
 		"""
 		Lets backend process internal events (prevents "not responding" window status)
 		"""
 		pygame.event.pump()
+		
 	
 	def process_user_input(self):
 		"""
@@ -200,7 +179,80 @@ class legacy_handler:
 
 		return continue_playback
 		
+
+class legacy_handler(pygame_handler):
+	"""
+	Handles video frames and input supplied by media_player_gst for the legacy backend, which is based on pygame
+	"""
+	
+	def __init__(self, main_player, screen, custom_event_code = None):
+		"""
+		Constructor. Set variables to be used in rest of class.
+
+		Arguments:
+		main_player -- reference to the main_player_gst object (which should instantiate this class)
+		screen -- reference to the pygame display surface		
+
+		Keyword arguments:
+		custom_event_code -- (Compiled) code that is to be called after every frame
+		"""		
+		super(legacy_handler, self).__init__(main_player, screen, custom_event_code )		
+				
+		
+		# Already create surfaces so this does not need to be redone for every frame
+		# The time process a single frame should be much shorter this way.				
+		self.img = pygame.Surface(self.main_player.vidsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))
+		# Create pygame bufferproxy object for direct surface access
+		# This saves us from using the time consuming pygame.image.fromstring() method as the frame will be
+		# supplied in a format that can be written directly to the bufferproxy		
+		self.imgBuffer = self.img.get_buffer()
+		if self.main_player.fullscreen == "yes":			
+			self.dest_surface = pygame.Surface	(self.main_player.destsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))		
+		
+	def handle_videoframe(self, frame):
+		"""
+		Callback method for handling a video frame
+
+		Arguments:
+		frame - the video frame supplied as a str/bytes object
+		"""		
+
+		self.screen.fill(pygame.Color(str(self.main_player.experiment.background)))
+		self.imgBuffer.write(frame, 0)
+		
+		if hasattr(self, "dest_surface"):
+			pygame.transform.scale(self.img, self.main_player.destsize, self.dest_surface)
+			self.screen.blit(self.dest_surface, self.main_player.vidPos)
+		else:	
+			self.screen.blit(self.img.copy(), self.main_player.vidPos)
+		pygame.display.flip()
+	
+		
+	
+class expyriment_handler(pygame_handler):
+	"""
+	Handles video frames and input supplied by media_player_gst for the expyriment backend, which is based on pygame
+	"""
+	def __init__(self, main_player, screen, custom_event_code = None):
+		import OpenGL.GL as GL
+		super(expyriment_handler, self).__init__(main_player, screen, custom_event_code )
+	
+	
+	def handle_videoframe(self, frame):
+		"""
+		Callback method for handling a video frame
+
+		Arguments:
+		frame - the video frame supplied as a str/bytes object
+		"""	
+		self.frame = frame	
+		
+
+		
 class psychopy_handler:
+	"""
+	Handles video frames and input for the psychopy backend supplied by media_player_gst
+	"""
 	def __init__(self, main_player, screen, custom_event_code = None):
 		"""
 		Constructor. Set variables to be used in rest of class.
@@ -369,33 +421,10 @@ class psychopy_handler:
 		
 		return continue_playback
 	
-	
-class expyriment_handler:
-	def __init__(self, main_player, screen):
-		import OpenGL.GL as GL
-		self.main_player = main_player
-		self.screen = screen
-	
-	def handle_videoframe(self, appsink):
-		"""
-		Callback method for handling a video frame
-
-		Arguments:
-		appsink -- the sink to which gst supplies the frame (not used)
-		"""	
-		pass	
-	
-	def process_user_input(self):
-		return True
-		
-	def process_user_input_customized(self, event=None):
-		return True
-	
-	
 
 class media_player_gst(item.item, libopensesame.generic_response.generic_response):
 
-	"""The media_player plug-in offers advanced video playback functionality in OpenSesame, using pyffmpeg"""
+	"""The media_player plug-in offers advanced video playback functionality in OpenSesame, using the Gstreamer framework"""
 
 	def __init__(self, name, experiment, string = None):
 
