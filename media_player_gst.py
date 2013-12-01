@@ -47,12 +47,9 @@ import gst
 # Rendering components
 import pygame
 import pyglet
-GL = pyglet.gl
 import psychopy
-import ctypes
 
-
-class pygame_handler:
+class pygame_handler(object):
 	"""
 	Superclass for both the legacy and expyriment hanlders. Both these backends are based on pygame, so should have 
 	the same event handling methods. This way they only need to be defined once for both classes.
@@ -236,7 +233,7 @@ class expyriment_handler(pygame_handler):
 	def __init__(self, main_player, screen, custom_event_code = None):
 		import OpenGL.GL as GL
 		super(expyriment_handler, self).__init__(main_player, screen, custom_event_code )
-	
+		self.texid = GL.glGenTextures(1)	
 	
 	def handle_videoframe(self, frame):
 		"""
@@ -246,6 +243,60 @@ class expyriment_handler(pygame_handler):
 		frame - the video frame supplied as a str/bytes object
 		"""	
 		self.frame = frame	
+			
+	def draw_buffer(self):		
+		"""
+		Does the actual rendering of the buffer to the screen
+		"""	
+		import OpenGL.GL as GL
+					
+		# Get desired format from main player
+		(w,h) = self.main_player.destsize
+		(x,y) = self.main_player.vidPos	
+		
+		# Prepare OpenGL for drawing
+		GL.glLoadIdentity()				
+
+		# Psychopy by default uses a coordinate sytem from {-2,2} for both x and y directions
+		# Reset this to the normal pixel coordinates of a screen
+		GL.glMatrixMode(GL.GL_PROJECTION)
+		GL.glPushMatrix()
+		GL.glLoadIdentity()
+		GL.glOrtho(0.0,  self.main_player.experiment.width,  self.main_player.experiment.height, 0.0, 0.0, 1.0)		
+		GL.glMatrixMode(GL.GL_MODELVIEW)					
+		
+		# Frame should blend with color white
+		GL.glColor4f(1,1,1,1)
+						
+		# Only if a frame has been set, blit it to the texture
+		if hasattr(self,"frame"):			    	
+			texture_width = self.main_player.vidsize[0]
+			texture_height = self.main_player.vidsize[1]
+	
+			GL.glClear(GL.GL_COLOR_BUFFER_BIT|GL.GL_DEPTH_BUFFER_BIT)	
+			GL.glLoadIdentity()
+		
+			GL.glColor4f(1,1,1,1)
+			GL.glEnable(GL.GL_TEXTURE_2D)
+		
+			GL.glBindTexture(GL.GL_TEXTURE_2D, self.texid)
+			GL.glTexImage2D( GL.GL_TEXTURE_2D, 0, GL.GL_RGB, texture_width, texture_height, 0,
+				      GL.GL_RGB, GL.GL_UNSIGNED_BYTE, self.frame );
+			GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+			GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)	
+			
+		# Drawing of the quad on which the frame texture is projected
+		GL.glBegin(GL.GL_QUADS)
+		GL.glTexCoord2f(0.0, 0.0); GL.glVertex3i(x, y, 0)
+		GL.glTexCoord2f(1.0, 0.0); GL.glVertex3i(x+w, y, 0)
+		GL.glTexCoord2f(1.0, 1.0); GL.glVertex3i(x+w, y+h, 0)
+		GL.glTexCoord2f(0.0, 1.0); GL.glVertex3i(x, y+h, 0)				
+		GL.glEnd()
+		
+		# Make sure there are no pending drawing operations and flip front and backbuffer
+		GL.glFlush()
+		
+		pygame.display.flip()
 		
 
 		
@@ -264,6 +315,8 @@ class psychopy_handler:
 		Keyword arguments:
 		custom_event_code -- (Compiled) code that is to be called after every frame
 		"""		
+		import ctypes		
+		GL = pyglet.gl
 		
 		self.main_player = main_player
 		self.win = screen
@@ -289,7 +342,7 @@ class psychopy_handler:
 		"""
 		Does the actual rendering of the buffer to the screen
 		"""	
-							
+		GL = pyglet.gl					
 		# Get desired format from main player
 		(w,h) = self.main_player.destsize
 		(x,y) = self.main_player.vidPos	
@@ -530,12 +583,14 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 		# Load video
 		self.load(path)		
 
-		# Set handler of frames and user unput
+		# Set handler of frames and user input
 		if self.has("canvas_backend"):
 			if self.get("canvas_backend") == "legacy":				
 				self.handler = legacy_handler(self, self.experiment.surface, custom_event_handler)
 			if self.get("canvas_backend") == "psycho":				
 				self.handler = psychopy_handler(self, self.experiment.window, custom_event_handler)
+			if self.get("canvas_backend") == "xpyriment":				
+				self.handler = expyriment_handler(self, self.experiment.window, custom_event_handler)
 		else:
 			# Give a sensible error message if the proper back-end has not been selected
 			raise osexception("The media_player plug-in requires the legacy back-end. Sorry!")		
@@ -701,7 +756,7 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 			while self.playing:
 				# Draw buffer to screen (drawing each iteration only necessary for OpenGL based backends (psychopy/expyriment))
 				self.handler.draw_buffer()	
-
+				
 				if not self.paused:						
 					# If connected to EyeLink and indicated that frame info should be sent.												
 					if self.sendInfoToEyelink == "yes" and hasattr(self.experiment,"eyelink") and self.experiment.eyelink.connected():						
@@ -726,7 +781,8 @@ class media_player_gst(item.item, libopensesame.generic_response.generic_respons
 				if not self.gst_loop.is_running():
 					self.playing = False				
 			
-			# Clean up resources
+			# Clean up resources		
+			
 			self.close_streams()
 			
 			# Print real frames per second
