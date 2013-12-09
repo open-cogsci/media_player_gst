@@ -15,7 +15,7 @@ You should have received a copy of the GNU General Public License
 along with OpenSesame.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-import os
+import os, sys
 import thread
 import time
 import urlparse, urllib
@@ -37,7 +37,9 @@ import libopensesame.generic_response
 # Gstreamer components
 # Add path to Gstreamer framework (if installed to default directory)
 if os.name == "nt":
-	os.environ['PATH'] = 'C:/gstreamer-sdk/0.10/x86/bin' + ';' + os.environ['PATH']
+	GSTREAMER_PATH = "C:\\gstreamer-sdk"
+	os.environ['PATH'] = os.path.join(GSTREAMER_PATH, '0.10', 'x86', 'bin') + ';' + os.environ['PATH']
+	sys.path.append(os.path.join(GSTREAMER_PATH, '0.10','x86','lib','python2.7','site-packages'))
 	
 import gobject
 import pygst
