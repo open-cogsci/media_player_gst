@@ -13,16 +13,27 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with OpenSesame.  If not, see <http://www.gnu.org/licenses/>.
+
+This module interfaces with the GStreamer framework through the 
+Python bindings supplied with it. The module enables media playback functionality 
+in the OpenSesame Experiment buider. In this module's current version, the 
+GStreamer SDK (from http://www.gstreamer.com) is expected to be 
+installed at its default location (in windows this is c:\gstreamer-sdk). 
+If this is not the case in your situation, please change the GSTREAMER_PATH 
+variable so that it points to the location at which you installed the 
+GStreamer framework. This plugin should then automatically find all required
+libraries and Python modules.
 """
 
 __author__ = "Daniel Schreij"
 __license__ = "GPLv3"
 
 import os, sys
-import thread
+import thread			# To run the gst event loop with
 import time
-import urlparse, urllib
+import urlparse, urllib		# To build the URI that gst requires
 
+# Import OpenSesame specific items
 from libopensesame import item, debug, generic_response
 from libopensesame.exceptions import osexception
 from libqtopensesame import qtplugin, pool_widget
@@ -65,8 +76,8 @@ import psychopy
 
 class pygame_handler(object):
 	"""
-	Superclass for both the legacy and expyriment hanlders. Both these backends are based on pygame, so should have 
-	the same event handling methods. This way they only need to be defined once for both classes.
+	Superclass for both the legacy and expyriment hanlders. Both these backends are based on pygame, so have 
+	the same event handling methods, which they can both inherit from this class.
 	"""
 	
 	def __init__(self, main_player, screen, custom_event_code = None):
@@ -74,7 +85,7 @@ class pygame_handler(object):
 		Constructor. Set variables to be used in rest of class.
 
 		Arguments:
-		main_player -- reference to the main_player_gst object (which should instantiate this class)
+		main_player -- reference to the main_player_gst object (which instantiates this class or its sublass)
 		screen -- reference to the pygame display surface		
 
 		Keyword arguments:
@@ -86,9 +97,9 @@ class pygame_handler(object):
 	
 	def draw_buffer(self):
 		"""
-		Dummy function as the frame is already drawn in handle_videoframe()
-		This function is only necessary in the OpenGL based psychopy and expyriment backend 
-		as the buffer appararently needs to be redrawn each frame
+		Dummy function as this function is only necessary in the OpenGL 
+		based psychopy and expyriment backend in which the buffer appararently 
+		needs to be redrawn each refresh cycle
 		"""
 		pass
 	
@@ -114,13 +125,18 @@ class pygame_handler(object):
 	
 	def pump_events(self):
 		"""
-		Lets backend process internal events (prevents "not responding" window status)
+		Lets pygame process internal events (prevents "not responding" window status)
 		"""
 		pygame.event.pump()
 		
 	def process_user_input(self):
 		"""
 		Process events from input devices
+		
+		Returns:
+		True -- if no key/mouse button has been pressed or if custom event code returns True
+		False -- if a keypress or mouse click was detected (an OS indicates playback should be stopped then
+			or custom event code has returned False
 		"""
 
 		for event in pygame.event.get():
@@ -215,7 +231,7 @@ class OpenGL_renderer(object):
 	This way they only need to be defined once for both classes.
 	"""
 	
-	def __init__(self, GL, main_player):
+	def __init__(self):
 		raise osexception("This class should only be subclassed on not be instantiated directly!")
 	
 	def prepare_for_playback(self):
@@ -226,6 +242,7 @@ class OpenGL_renderer(object):
 		GL.glPushMatrix()		# Save current OpenGL context
 		GL.glLoadIdentity()				
 
+		# Set screen coordinates to useful values for movie playback (per pixel coordinates)
 		GL.glMatrixMode(GL.GL_PROJECTION)
 		GL.glPushMatrix()
 		GL.glLoadIdentity()
@@ -302,19 +319,20 @@ class legacy_handler(pygame_handler):
 
 		Keyword arguments:
 		custom_event_code -- (Compiled) code that is to be called after every frame
-		"""		
+		"""	
+		# Call constructor of super class
 		super(legacy_handler, self).__init__(main_player, screen, custom_event_code )		
 				
 		
 		# Already create surfaces so this does not need to be redone for every frame
-		# The time process a single frame should be much shorter this way.				
+		# The time to process a single frame should be much shorter this way.				
 		self.img = pygame.Surface(self.main_player.vidsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))
 		# Create pygame bufferproxy object for direct surface access
 		# This saves us from using the time consuming pygame.image.fromstring() method as the frame will be
 		# supplied in a format that can be written directly to the bufferproxy		
 		self.imgBuffer = self.img.get_buffer()
 		if self.main_player.fullscreen == u"yes":			
-			self.dest_surface = pygame.Surface	(self.main_player.destsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))		
+			self.dest_surface = pygame.Surface(self.main_player.destsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))		
 		
 	def handle_videoframe(self, frame):
 		"""
@@ -324,25 +342,33 @@ class legacy_handler(pygame_handler):
 		frame - the video frame supplied as a str/bytes object
 		"""		
 
+		# Fill surface with background color
 		self.screen.fill(pygame.Color(str(self.main_player.experiment.background)))
+		
+		# Write the video frame to the bufferproxy
 		self.imgBuffer.write(frame, 0)
 		
+		# If resize option is selected, resize frame to screen/window dimensions and blit
 		if hasattr(self, "dest_surface"):
 			pygame.transform.scale(self.img, self.main_player.destsize, self.dest_surface)
 			self.screen.blit(self.dest_surface, self.main_player.vidPos)
 		else:	
+		# In case movie needs to be displayed 1-on-1 blit directly to screen
 			self.screen.blit(self.img.copy(), self.main_player.vidPos)
 		
+		# Show them the money!
 		self.swap_buffers()
 	
 		
-	
 class expyriment_handler(OpenGL_renderer, pygame_handler):
 	"""
-	Handles video frames and input supplied by media_player_gst for the expyriment backend, which is based on pygame
+	Handles video frames and input supplied by media_player_gst for the expyriment backend, 
+	which is based on pygame (with OpenGL in fullscreen mode)
 	"""
 	def __init__(self, main_player, screen, custom_event_code = None):
 		import OpenGL.GL as GL
+		
+		# Initialize super c lass
 		pygame_handler.__init__(self, main_player, screen, custom_event_code )
 		
 		# GL context to use by the OpenGL_renderer class
@@ -362,6 +388,7 @@ class expyriment_handler(OpenGL_renderer, pygame_handler):
 class psychopy_handler(OpenGL_renderer):
 	"""
 	Handles video frames and input for the psychopy backend supplied by media_player_gst
+	Based on OpenGL so inherits from the OpenGL_renderer superclass
 	"""
 	def __init__(self, main_player, screen, custom_event_code = None):
 		"""
@@ -410,6 +437,11 @@ class psychopy_handler(OpenGL_renderer):
 	def process_user_input(self):		
 		"""
 		Process events from input devices
+		
+		Returns:
+		True -- if no key/mouse button has been pressed or if custom event code returns True
+		False -- if a keypress or mouse click was detected (an OS indicates playback should be stopped then
+			or custom event code has returned False
 		"""		
 		pressed_keys = psychopy.event.getKeys()				
 		
@@ -454,26 +486,27 @@ class psychopy_handler(OpenGL_renderer):
 		
 		continue_playback = True		
 	
-		exp = self.main_player.experiment		
-		
 		# Variables for user to use in custom script
+		exp = self.main_player.experiment		
 		frame = self.main_player.frame_no
 		mov_width = self.main_player.destsize[0]
 		mov_height = self.main_player.destsize[1]
 		
 		# Easily callable pause function
-		# Use can now simply say pause() und unpause()
+		# Use can now simply call pause() to pause and unpause()
 		paused = self.main_player.paused
 		pause = self.main_player.pause
 
 		# Add more convenience functions?	
-
+		
+		# Execute custom code
 		try:
 			exec(self.custom_event_code)
 		except Exception as e:
 			self.main_player.playing = False
 			raise osexception(u"Error while executing event handling code: %s" % e)
 
+		# if continue_playback has been set to anything else than True or False, then stop playback
 		if type(continue_playback) != bool:
 			continue_playback = False	
 		
@@ -489,7 +522,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 
 	def __init__(self, name, experiment, string = None):
 		"""
-		Constructor. Link to the video can already be specified but this is optional
+		Constructor. 
 
 		Arguments:
 		name -- the name of the item
@@ -500,8 +533,9 @@ class media_player_gst(item.item, generic_response.generic_response):
 		"""
 
 		# The version of the plug-in
-		self.version = 1.0
+		self.version = "1.0"
 
+		# Prepare GST loop (for emitting bus messages from player)
 		gobject.threads_init()
 		self.gst_loop = gobject.MainLoop()
 
@@ -529,14 +563,14 @@ class media_player_gst(item.item, generic_response.generic_response):
 	
 	def calculate_scaled_resolution(self, screen_res, image_res):
 		"""Calculate image size so it fits the screen
-		Args
-			screen_res (tuple)   -  Display window size/Resolution
-			image_res (tuple)    -  Image width and height
-			unit (string)	    -  ("int" or "float") Should the result be rounded or not?
-	
-		Returns
-			tuple - width and height of image scaled to window/screen
+		Arguments:
+		screen_res  --  Tuple containing display window size/Resolution
+		image_res   --  Tuple containing image width and height
+			
+		Returns:
+		(width, height) tuple of image scaled to window/screen
 		"""
+		
 		rs = screen_res[0]/float(screen_res[1])
 		ri = image_res[0]/float(image_res[1])
 	
@@ -614,6 +648,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 		Arguments:
 		vfile -- the path to the file to be played
 		"""
+		
 		# Info required for color space conversion (YUV->RGB)
 		# masks are necessary for correct display on unix systems
 		self._VIDEO_CAPS = ','.join([
@@ -622,7 +657,6 @@ class media_player_gst(item.item, generic_response.generic_response):
 		    'green_mask=(int)0x00ff00',
 		    'blue_mask=(int)0x0000ff',
 		])
-
 		caps = gst.Caps(self._VIDEO_CAPS)
 
 		# Create videoplayer and load URI
@@ -638,7 +672,12 @@ class media_player_gst(item.item, generic_response.generic_response):
 		self._videosink.set_property('sync', True)
 		self._videosink.set_property('drop', True)
 		self._videosink.set_property('emit-signals', True)
+		
+		# Here the frame output is linked to our custom callback function
+		# which further processes the frame contents
 		self._videosink.connect('new-buffer', self.handle_videoframe)		
+		
+		# Let the player output to our just created videosink
 		self.player.set_property('video-sink', self._videosink)
 
 		# Set functions for handling player messages
@@ -667,19 +706,20 @@ class media_player_gst(item.item, generic_response.generic_response):
 		else:
 			raise osexception(u"Failed to open movie. Do you have all the necessary codecs/plugins installed?")
 	
+		# Mute audio if necessary
 		if self.playaudio == u"no":
-			self.player.set_property("mute",True)				
+			self.player.set_property("mute", True)				
 					
-		self.file_loaded = True
-		
 		if self.fullscreen == u"yes":
+			# Calculate dimensions of video when scaled up to screen dimensions
 			self.destsize = self.calculate_scaled_resolution((self.experiment.width,self.experiment.height), self.vidsize)				
 		else:
+			# If no scaling is required, just use the original video dimensions for the destination size
 			self.destsize = self.vidsize
 
 		# x,y coordinate of top-left video corner
 		self.vidPos = ((self.experiment.width - self.destsize[0]) / 2, (self.experiment.height - self.destsize[1]) / 2)		
-			
+		self.file_loaded = True	
 		
 	def handle_videoframe(self, appsink):
 		buffer = appsink.emit('pull-buffer')
@@ -697,7 +737,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 			# Send frame buffer to handler.			
 			self.handler.handle_videoframe(buffer.data)						
 			
-			# Keep track of frames displayed to calculate real FPS
+			# Keep track of frames displayed to calculate real FPS later
 			self.frames_displayed += 1
 		
 		
@@ -748,8 +788,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 	def run(self):
 		"""
 		Starts the playback of the video file. You can specify an optional callable object to handle events between frames (like keypresses)
-		This function needs to return a boolean, because it determines if playback is continued or stopped. If no callable object is provided
-		playback will stop when the ESC key is pressed
+		This function needs to return a boolean, because it determines if playback is continued or stopped. Playback will still stop when the ESC key is pressed.
 
 		Returns:
 		True on success, False on failure
@@ -783,13 +822,13 @@ class media_player_gst(item.item, generic_response.generic_response):
 			
 			self.playing = True
 			self.paused = False
-			start_time = time.time()
 			
 			# Prepare frame renderer in handler for playback
 			# (e.g. set up OpenGL context, thus only relevant for OpenGL based backends)
 			self.handler.prepare_for_playback()
 
 			### Main player loop. While True, the movie is playing
+			start_time = time.time()
 			while self.playing:
 				# Draw buffer to screen (drawing each iteration only necessary for OpenGL based backends (psychopy/expyriment))
 				self.handler.draw_buffer()	
@@ -800,8 +839,9 @@ class media_player_gst(item.item, generic_response.generic_response):
 						self.experiment.eyelink.log(u"videoframe %s" % self.frame_no)
 						self.experiment.eyelink.status_msg(u"videoframe %s" % self.frame_no )
 				
-					
 				# Listen for events 
+				# TODO: now event handling is done continuously (every refresh cycle) and not after every frame!!
+				# somehow it does not work as it should when placed in the handle_videoframe() function which is frame locked.
 				if self._event_handler_always:
 					self.playing = self.handler.process_user_input_customized()
 				elif not self._event_handler_always:				
@@ -812,9 +852,10 @@ class media_player_gst(item.item, generic_response.generic_response):
 					if time.time() - start_time > self.duration:
 						self.playing = False
 
-				# Prevent overflow of event queue (window shows 'unresponsive' otherwise)				
+				# Prevent overflow of event queue (window shows 'unresponsive' otherwise when moved)				
 				self.handler.pump_events()						
-													
+								
+				# If gst loop is not running stop playback					
 				if not self.gst_loop.is_running():
 					self.playing = False				
 
