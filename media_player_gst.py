@@ -59,6 +59,11 @@ import pygame
 import pyglet
 import psychopy
 
+
+#---------------------------------------------------------------------
+# Base classes (should be subclassed by backend-specific classes)
+#---------------------------------------------------------------------
+
 class pygame_handler(object):
 	"""
 	Superclass for both the legacy and expyriment hanlders. Both these backends are based on pygame, so should have 
@@ -80,7 +85,6 @@ class pygame_handler(object):
 		self.screen = screen
 		self.custom_event_code = custom_event_code	
 	
-	
 	def draw_buffer(self):
 		"""
 		Dummy function as the frame is already drawn in handle_videoframe()
@@ -94,7 +98,6 @@ class pygame_handler(object):
 		Flips back and front buffers
 		"""
 		pygame.display.flip()
-	
 	
 	def prepare_for_playback(self):
 		"""
@@ -116,7 +119,6 @@ class pygame_handler(object):
 		"""
 		pygame.event.pump()
 		
-	
 	def process_user_input(self):
 		"""
 		Process events from input devices
@@ -205,7 +207,86 @@ class pygame_handler(object):
 			continue_playback = False
 
 		return continue_playback
+
+
+class OpenGL_renderer(object):
+	"""
+	Superclass for both the expyriment and psychopy handlers. Both these backends 
+	are OpenGL based and basically have the same drawing routines. 
+	This way they only need to be defined once for both classes.
+	"""
+	
+	def __init__(self, GL, main_player):
+		raise osexception("This class should only be subclassed on not be instantiated directly!")
+	
+	def prepare_for_playback(self):
+		"""Prepares the OpenGL context for playback"""
+		GL = self.GL
+				
+		# Prepare OpenGL for drawing
+		GL.glPushMatrix()		# Save current OpenGL context
+		GL.glLoadIdentity()				
+
+		GL.glMatrixMode(GL.GL_PROJECTION)
+		GL.glPushMatrix()
+		GL.glLoadIdentity()
+		GL.glOrtho(0.0,  self.main_player.experiment.width,  self.main_player.experiment.height, 0.0, 0.0, 1.0)		
+		GL.glMatrixMode(GL.GL_MODELVIEW)
 		
+	def playback_finished(self):
+		""" Restore previous OpenGL context as before playback """
+		GL = self.GL
+		
+		GL.glMatrixMode(GL.GL_PROJECTION)
+		GL.glPopMatrix()
+		GL.glMatrixMode(GL.GL_MODELVIEW)				
+		GL.glPopMatrix()
+		
+	def draw_buffer(self):		
+		"""
+		Does the actual rendering of the buffer to the screen
+		"""	
+		GL = self.GL
+
+		# Get desired format from main player
+		(w,h) = self.main_player.destsize
+		(x,y) = self.main_player.vidPos						
+					
+		# Frame should blend with color white
+		GL.glColor4f(1,1,1,1)
+						
+		# Only if a frame has been set, blit it to the texture
+		if hasattr(self,"frame") and not self.frame is None:			    	
+			texture_width = self.main_player.vidsize[0]
+			texture_height = self.main_player.vidsize[1]
+	
+			GL.glClear(GL.GL_COLOR_BUFFER_BIT|GL.GL_DEPTH_BUFFER_BIT)	
+			GL.glLoadIdentity()
+		
+			GL.glEnable(GL.GL_TEXTURE_2D)
+		
+			GL.glBindTexture(GL.GL_TEXTURE_2D, self.texid)
+			GL.glTexImage2D( GL.GL_TEXTURE_2D, 0, GL.GL_RGB, texture_width, texture_height, 0,
+				      GL.GL_RGB, GL.GL_UNSIGNED_BYTE, self.frame );
+			GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+			GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)	
+			
+		# Drawing of the quad on which the frame texture is projected
+		GL.glBegin(GL.GL_QUADS)
+		GL.glTexCoord2f(0.0, 0.0); GL.glVertex3i(x, y, 0)
+		GL.glTexCoord2f(1.0, 0.0); GL.glVertex3i(x+w, y, 0)
+		GL.glTexCoord2f(1.0, 1.0); GL.glVertex3i(x+w, y+h, 0)
+		GL.glTexCoord2f(0.0, 1.0); GL.glVertex3i(x, y+h, 0)				
+		GL.glEnd()
+		
+		# Make sure there are no pending drawing operations and flip front and backbuffer
+		GL.glFlush()				
+		self.swap_buffers()		
+
+		
+#---------------------------------------------------------------------
+# Backend specific classes
+#---------------------------------------------------------------------	
 
 class legacy_handler(pygame_handler):
 	"""
@@ -257,37 +338,18 @@ class legacy_handler(pygame_handler):
 	
 		
 	
-class expyriment_handler(pygame_handler):
+class expyriment_handler(OpenGL_renderer, pygame_handler):
 	"""
 	Handles video frames and input supplied by media_player_gst for the expyriment backend, which is based on pygame
 	"""
 	def __init__(self, main_player, screen, custom_event_code = None):
 		import OpenGL.GL as GL
-		super(expyriment_handler, self).__init__(main_player, screen, custom_event_code )
+		pygame_handler.__init__(self, main_player, screen, custom_event_code )
+		
+		# GL context to use by the OpenGL_renderer class
+		self.GL = GL
 		self.texid = GL.glGenTextures(1)	
 		
-	def prepare_for_playback(self):
-		"""Prepares the OpenGL context for playback"""
-		import OpenGL.GL as GL
-				
-		# Prepare OpenGL for drawing
-		GL.glPushMatrix()		# Save current OpenGL context
-		GL.glLoadIdentity()				
-
-		GL.glMatrixMode(GL.GL_PROJECTION)
-		GL.glPushMatrix()
-		GL.glLoadIdentity()
-		GL.glOrtho(0.0,  self.main_player.experiment.width,  self.main_player.experiment.height, 0.0, 0.0, 1.0)		
-		GL.glMatrixMode(GL.GL_MODELVIEW)
-		
-	def playback_finished(self):
-		""" Restore previous OpenGL context as before playback """
-		import OpenGL.GL as GL
-		GL.glMatrixMode(GL.GL_PROJECTION)
-		GL.glPopMatrix()
-		GL.glMatrixMode(GL.GL_MODELVIEW)				
-		GL.glPopMatrix()		
-	
 	def handle_videoframe(self, frame):
 		"""
 		Callback method for handling a video frame
@@ -295,50 +357,10 @@ class expyriment_handler(pygame_handler):
 		Arguments:
 		frame - the video frame supplied as a str/bytes object
 		"""	
-		self.frame = frame	
-			
-	def draw_buffer(self):		
-		"""
-		Does the actual rendering of the buffer to the screen
-		"""	
-		import OpenGL.GL as GL
-
-		# Get desired format from main player
-		(w,h) = self.main_player.destsize
-		(x,y) = self.main_player.vidPos						
-					
-		# Frame should blend with color white
-		GL.glColor4f(1,1,1,1)
+		self.frame = frame
 						
-		# Only if a frame has been set, blit it to the texture
-		if hasattr(self,"frame"):			    	
-			texture_width = self.main_player.vidsize[0]
-			texture_height = self.main_player.vidsize[1]
-	
-			GL.glClear(GL.GL_COLOR_BUFFER_BIT|GL.GL_DEPTH_BUFFER_BIT)	
-			GL.glLoadIdentity()
 		
-			GL.glEnable(GL.GL_TEXTURE_2D)
-		
-			GL.glBindTexture(GL.GL_TEXTURE_2D, self.texid)
-			GL.glTexImage2D( GL.GL_TEXTURE_2D, 0, GL.GL_RGB, texture_width, texture_height, 0,
-				      GL.GL_RGB, GL.GL_UNSIGNED_BYTE, self.frame );
-			GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
-			GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)	
-			
-		# Drawing of the quad on which the frame texture is projected
-		GL.glBegin(GL.GL_QUADS)
-		GL.glTexCoord2f(0.0, 0.0); GL.glVertex3i(x, y, 0)
-		GL.glTexCoord2f(1.0, 0.0); GL.glVertex3i(x+w, y, 0)
-		GL.glTexCoord2f(1.0, 1.0); GL.glVertex3i(x+w, y+h, 0)
-		GL.glTexCoord2f(0.0, 1.0); GL.glVertex3i(x, y+h, 0)				
-		GL.glEnd()
-		
-		# Make sure there are no pending drawing operations and flip front and backbuffer
-		GL.glFlush()				
-		self.swap_buffers()					
-		
-class psychopy_handler:
+class psychopy_handler(OpenGL_renderer):
 	"""
 	Handles video frames and input for the psychopy backend supplied by media_player_gst
 	"""
@@ -353,19 +375,19 @@ class psychopy_handler:
 		Keyword arguments:
 		custom_event_code -- (Compiled) code that is to be called after every frame
 		"""		
-		import ctypes		
-		GL = pyglet.gl
+		import ctypes				
 		
 		self.main_player = main_player
 		self.win = screen
 		self.frame = None
 		self.custom_event_code = custom_event_code	
 
-		# Create texture to render frames to later		
+		# GL context to be used by the OpenGL_renderer class
+		# Create texture to render frames to later
+		GL = self.GL = pyglet.gl	
 		self.texid = GL.GLuint()
 		GL.glGenTextures(1, ctypes.byref(self.texid))
-				
-	
+					
 	def handle_videoframe(self, frame):
 		"""
 		Callback method for handling a video frame
@@ -379,73 +401,6 @@ class psychopy_handler:
 		"""Draw buffer to screen"""
 		self.win.flip()
 		
-	def prepare_for_playback(self):
-		"""Prepares the OpenGL context for playback"""
-		GL = pyglet.gl	
-		# Prepare OpenGL for drawing
-		GL.glPushMatrix()			# Save current OpenGL context
-		GL.glLoadIdentity()				
-
-		# Psychopy by default uses a coordinate sytem from {-2,2} for both x and y directions
-		# Reset this to the normal pixel coordinates of a screen
-		GL.glMatrixMode(GL.GL_PROJECTION)
-		GL.glPushMatrix()
-		GL.glLoadIdentity()
-		GL.glOrtho(0.0,  self.main_player.experiment.width,  self.main_player.experiment.height, 0.0, 0.0, 1.0)		
-		GL.glMatrixMode(GL.GL_MODELVIEW)
-		
-	def playback_finished(self):
-		"""Restores the OpenGL context as it was before playback"""
-		GL = pyglet.gl	
-		# Reset coordinate system to default psychopy {-2,2} range
-		GL.glMatrixMode(GL.GL_PROJECTION)
-		GL.glPopMatrix()
-		GL.glMatrixMode(GL.GL_MODELVIEW)					
-		# Restore previous OpenGL context	
-		GL.glPopMatrix()	
-		
-	def draw_buffer(self):		
-		"""
-		Does the actual rendering of the buffer to the screen
-		"""	
-		GL = pyglet.gl	
-				
-		# Get desired dimensions and position from main player
-		(w,h) = self.main_player.destsize
-		(x,y) = self.main_player.vidPos	
-								
-		# Frame should blend with color white
-		GL.glColor4f(1,1,1,1)
-						
-		# Only if a frame has been set, blit it to the texture
-		if hasattr(self,"frame"):			    	
-			texture_width = self.main_player.vidsize[0]
-			texture_height = self.main_player.vidsize[1]
-	
-			GL.glClear(GL.GL_COLOR_BUFFER_BIT|GL.GL_DEPTH_BUFFER_BIT)	
-			GL.glLoadIdentity()
-		
-			GL.glEnable(GL.GL_TEXTURE_2D)
-		
-			GL.glBindTexture(GL.GL_TEXTURE_2D, self.texid)
-			GL.glTexImage2D( GL.GL_TEXTURE_2D, 0, GL.GL_RGB, texture_width, texture_height, 0,
-				      GL.GL_RGB, GL.GL_UNSIGNED_BYTE, self.frame );
-			GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
-			GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)	
-			
-		# Drawing of the quad on which the frame texture is projected
-		GL.glBegin(GL.GL_QUADS)
-		GL.glTexCoord2f(0.0, 0.0); GL.glVertex3i(x, y, 0)
-		GL.glTexCoord2f(1.0, 0.0); GL.glVertex3i(x+w, y, 0)
-		GL.glTexCoord2f(1.0, 1.0); GL.glVertex3i(x+w, y+h, 0)
-		GL.glTexCoord2f(0.0, 1.0); GL.glVertex3i(x, y+h, 0)				
-		GL.glEnd()
-		
-		# Make sure there are no pending drawing operations and flip front and backbuffer
-		GL.glFlush()		
-		self.swap_buffers()
-		
-
 	def pump_events(self):
 		"""
 		Process events from input devices to prevent not responsive message (not necessary for psychopy)
@@ -524,6 +479,9 @@ class psychopy_handler:
 		
 		return continue_playback
 	
+#---------------------------------------------------------------------
+# Main player class -- communicates with GStreamer
+#---------------------------------------------------------------------
 
 class media_player_gst(item.item, generic_response.generic_response):
 
@@ -901,7 +859,9 @@ class media_player_gst(item.item, generic_response.generic_response):
 		return generic_response.generic_response.var_info(self)
 
 
-		
+#---------------------------------------------------------------------
+# GUI class
+#---------------------------------------------------------------------
 
 class qtmedia_player_gst(media_player_gst, qtautoplugin):
 
