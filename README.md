@@ -39,8 +39,8 @@ The plugin offers the following configuration options from the GUI:
 ## Custom Python code for handling keypress and mouseclick events
 This plugin also offers functionality to execute custom event handling code after each frame, or after a key press or mouse click (Note that execution of code after each frame nullifies the 'keypress' option in the duration field; Escape presses however are still listened to). This is for instance useful, if one wants to count how many times a participants presses space (or any other button) during the showtime of the movie.
 
-There are a couple of variables accessible from this script for your convenience.
-- `continue_playback` (True or False) - Determines if the movie should keep on playing. This variable is set to True by defaukt while the movie is playing. If you want to stop playback from your script, simply set this variable to False and playback will stop.
+There are a couple of variables accessible in the script you enter here:
+- `continue_playback` (True or False) - Determines if the movie should keep on playing. This variable is set to True by default while the movie is playing. If you want to stop playback from your script, simply set this variable to False and playback will stop.
 - `exp` - A convenience variable pointing to the self.experiment object
 - `frame` - The number of the current frame that is being displayed
 - `mov_width` - The width of the movie in px
