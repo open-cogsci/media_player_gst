@@ -185,8 +185,8 @@ class pygame_handler(object):
 		# Variables for user to use in custom script
 		exp = self.main_player.experiment
 		frame = self.main_player.frame_no
-		scr_width = self.main_player.experiment.width
-		scr_height = self.main_player.experiment.height
+		mov_width = self.main_player.destsize[0]
+		mov_height = self.main_player.destsize[1]
 		
 		# Easily callable pause function
 		# Use can now simply say pause() und unpause()
@@ -458,8 +458,8 @@ class psychopy_handler(OpenGL_renderer):
 		
 		# Variables for user to use in custom script
 		frame = self.main_player.frame_no
-		scr_width = self.main_player.experiment.width
-		scr_height = self.main_player.experiment.height
+		mov_width = self.main_player.destsize[0]
+		mov_height = self.main_player.destsize[1]
 		
 		# Easily callable pause function
 		# Use can now simply say pause() und unpause()
