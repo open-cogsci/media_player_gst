@@ -56,7 +56,6 @@ except:
 
 # Rendering components
 import pygame
-import pyglet
 import psychopy
 
 
@@ -375,7 +374,8 @@ class psychopy_handler(OpenGL_renderer):
 		Keyword arguments:
 		custom_event_code -- (Compiled) code that is to be called after every frame
 		"""		
-		import ctypes				
+		import ctypes
+		import pyglet.gl		
 		
 		self.main_player = main_player
 		self.win = screen
