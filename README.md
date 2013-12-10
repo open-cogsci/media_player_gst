@@ -1,11 +1,18 @@
-# GStreamer based Media Player 
+# GStreamer based Media Player plugin
 
-Copyright 2010-2014 Daniel Schreij <d.schreij@vu.nl>
+Copyright 2010-2014 Daniel Schreij (<d.schreij@vu.nl>)
 
-The media_player_gst plug-in adds video playback capabilities to the [OpenSesame experiment builder][opensesame]. This plug-in uses the [GStreamer framework][gst] as its basis. It can handle most modern video and audio formats, as long as they are supported by the [libav library][libav].
+The media_player_gst plug-in adds video playback capabilities to the [OpenSesame experiment builder][opensesame]. This plug-in uses the [GStreamer framework][gst] as its basis. It can handle most modern video and audio formats, as long as they are supported by the [libav library][libav]. This plugin has some benefits compared to the other media player plugins that are currently available for OpenSesame, such as:
+
+- Works in all backends (whereas media_player_vlc was only limited to the legacy or expyriment backends)
+- Frames are drawn internally by OpenSesame, offering more control such as determining which frame is currently shown, making screenshots, or even the possibility of real-time drawing on top of the shown video frames.
+- Multi-platform; should work in Windows, Linux and (in the future) Mac and Android versions of OpenSesame.
+- This framework is the way to go for playing media in my opinion and I (hope to) keep actively developing it in the future (and as always, any help with this is much appreciated).
 
 ##Plug-in installation
-If this plugin did not come together with your OpenSesame installation, you will probably need to install the GStreamer framework yourself. Otherwise it should just work fine out of the box. In (Ubuntu) Linux, you can easily install GStreamer with the command
+If this plugin came together with your OpenSesame installation, it should work directly out of the box. If it did not, (for instance because you are running OpenSesame from source) you will probably need to install the GStreamer framework yourself before you can use the plugin. 
+
+In (Ubuntu) Linux, you can easily install GStreamer with the command
 
     sudo apt-get install gstreamer0.10-tools gstreamer-tools gstreamer0.10-plugins-base gstreamer0.10-ffmpeg 
 
@@ -13,9 +20,38 @@ If this plugin did not come together with your OpenSesame installation, you will
 
 For Windows and Mac (and also for Linux if the above did not work for you) you can download the appropriate GStreamer distributables from [the GStreamer website][gst-dl]. Whether you need to download the 32-bit or 64-bit variant depends on your Python installation. If you have installed a 32-bit Python, you will need the 32-bit version of GStreamer and vice versa for 64-bit (Note that this has nothing to do with the architecture of your OS: if you installed a 32-bit Python on your 64-bit OS, you still require the 32-bit version of GStreamer). 
 
-Under Windows select custom installation, and also check the box before `libav wrapper`. This add-on contains the codecs you need to be able to play most current video and audio formats and if you forget this, you will inevitably bump into problems sooner or later, so don't ;)
+Under Windows select custom installation and make sure the box before `libav wrapper` is checked. This add-on contains the codecs you need to be able to play most current video and audio formats and if you forget this, you will inevitably bump into problems sooner or later, so don't ;)
 
-The plugin will automatically find your GStreamer installation if it has been installed to the default location (which on windows is `c:\gstreamer-sdk\`). If you needed to install it to a different folder, you will have to edit the variable GSTREAMER_PATH somewhere in the top of media_player_gst.py and make it point to the location at which you have installed GStreamer.
+The plugin will automatically find your GStreamer installation if it has been installed to its default location (which on windows is usually `c:\gstreamer-sdk\`). If you needed to install it to a different folder, you will have to edit the variable GSTREAMER_PATH somewhere at the top section of media_player_gst.py and make it point to the location at which you have installed GStreamer.
+
+If you followed all the above steps correctly, OpenSesame should now be able to succesfully import the media_player_gst plugin, when it is placed in your experiment structure.
+
+## Plugin settings
+The plugin offers the following configuration options
+
+- *Video file* - the video file to be played. This field allows variables such as [video_file], of which you can specify the value in loop items
+- *Play audio* - specifies whether the video is to be played with audio on or in silence (muted)
+- *Fit video to screen* - specifies whether the video should be played in its original size, or if it should be scaled to fit the size of the window/screen. The rescaling procedure maintains the original aspect ratio of the movie.
+- *Loop playback* - specifies if the video should be looped, meaning that it will start again from the beginning once the end of of the movie is reached.
+- *Send frame no. to EyeLink* - if this computer is connected to an SR Research Eyelink eye tracking device, this specifies if a message should be sent once a new frame is displayed. This enables you to time-lock gaze information to frame display times (i.e. determine what the observer looked at during a frame)
+- *Duration* - How long should the movie be displayed. Expects a value in seconds, 'keypress' or 'mouseclick'
+
+## Custom Python code for handling keypress and mouseclick events
+This plugin also offers functionality to execute custom event handling code after each frame, or after a key press or mouse click (Note that execution of code after each frame nullifies the 'keypress' option in the duration field; Escape presses however are still listened to). This is for instance useful, if one wants to count how many times a participants presses space (or any other button) during the showtime of the movie.
+
+There are a couple of variables accessible from this script for your convenience.
+- `continue_playback` (True or False) - Determines if the movie should keep on playing. This variable is set to True by defaukt while the movie is playing. If you want to stop playback from your script, simply set this variable to False and playback will stop.
+- `exp` - A convenience variable pointing to the self.experiment object
+- `frame` - The number of the current frame that is being displayed
+- `mov_width` - The width of the movie in px
+- `mov_height` - The height of the movie in px
+- `paused` - *True* when playback is currently paused, *False* if movie is currently running
+
+Next to this you can also directly call the following functions:
+
+- `pause()` - Pauses playback when the movie is running, and pauses it otherwise (you could regard it as a pause/unpause toggle)
+
+
 
 
 [opensesame]: http://www.cogsci.nl/opensesame
