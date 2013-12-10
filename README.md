@@ -56,4 +56,3 @@ Next to these variables you also have the following functions at your disposal:
 [gst]: http://www.gstreamer.com/
 [gst-dl]: http://docs.gstreamer.com/display/GstSDK/Installing+the+SDK
 [libav]: http://libav.org/
-
