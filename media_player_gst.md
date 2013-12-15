@@ -11,8 +11,8 @@ The media_player_gst plug-in adds video playback capabilities to the [OpenSesame
 ## Plugin settings
 The plugin offers the following configuration options from the GUI:
 
-- *Video file* - the video file to be played. This field allows variables such as [video_file], of which you can specify the value in loop items
-- *Play audio* - specifies whether the video is to be played with audio on or in silence (muted)
+- *Video file* - the video file to be played. This field allows variables such as [video_file], of which you can specify the value in loop items.
+- *Play audio* - specifies whether the video is to be played with audio or in silence (muted).
 - *Fit video to screen* - specifies whether the video should be played in its original size, or if it should be scaled to fit the size of the window/screen. The rescaling procedure maintains the original aspect ratio of the movie.
 - *Loop playback* - specifies if the video should be looped, meaning that it will start again from the beginning once the end of of the movie is reached.
 - *Send frame no. to EyeLink* - if this computer is connected to an SR Research Eyelink eye tracking device, this specifies if a message should be sent once a new frame is displayed. This enables you to time-lock gaze information to frame display times (i.e. determine what the observer looked at during a frame)
@@ -22,6 +22,7 @@ The plugin offers the following configuration options from the GUI:
 This plugin also offers functionality to execute custom event handling code after each frame, or after a key press or mouse click (Note that execution of code after each frame nullifies the 'keypress' option in the duration field; Escape presses however are still listened to). This is for instance useful, if one wants to count how many times a participants presses space (or any other button) during the showtime of the movie.
 
 There are a couple of variables accessible in the script you enter here:
+
 - `continue_playback` (True or False) - Determines if the movie should keep on playing. This variable is set to True by default while the movie is playing. If you want to stop playback from your script, simply set this variable to False and playback will stop.
 - `exp` - A convenience variable pointing to the self.experiment object
 - `frame` - The number of the current frame that is being displayed

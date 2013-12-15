@@ -40,30 +40,29 @@ from libqtopensesame import qtplugin, pool_widget
 from libqtopensesame.items.qtautoplugin import qtautoplugin
 
 # Gstreamer components
+
+# If The Gstreamer SDK is found in the plugin folder, add the relevant paths
+# so that we use this framework. This is Windows only.
+if os.name == "nt":
+	if os.path.exists(os.path.join(os.path.dirname(__file__), \
+		'gstreamer-sdk')):
+		GSTREAMER_PATH = os.path.join(os.path.dirname(__file__), \
+		'gstreamer-sdk')
+	else:
+		GSTREAMER_PATH = r"C:\gstreamer-sdk"
+	os.environ['PATH'] = os.path.join(GSTREAMER_PATH, '0.10', 'x86', 'bin') + \
+		';' + os.environ['PATH']
+	sys.path.append(os.path.join(GSTREAMER_PATH, '0.10','x86','lib', \
+		'python2.7','site-packages'))
+		
+# Try to load Gstreamer
 try:
-	# First try to import gstreamer modules directly (in case framework is integrated with OpenSesame)
 	import gobject
 	import pygst
 	pygst.require("0.10")
 	import gst
 except:
-	# Add paths were Gstreamer framework might be found (if installed at default locations)
-	try:
-		if os.name == "nt":
-			GSTREAMER_PATH = "C:\\gstreamer-sdk"
-			os.environ['PATH'] = os.path.join(GSTREAMER_PATH, '0.10', 'x86', 'bin') + ';' + os.environ['PATH']
-			sys.path.append(os.path.join(GSTREAMER_PATH, '0.10','x86','lib','python2.7','site-packages'))
-		elif os.name == "darwin":
-			# TODO OS X framework localization.		
-			pass
-		
-		# Try again
-		import gobject
-		import pygst
-		pygst.require("0.10")
-		import gst
-	except:
-		raise osexception("OpenSesame could not find the GStreamer framework!")
+	raise osexception("OpenSesame could not find the GStreamer framework!")
 
 # Rendering components
 import pygame
