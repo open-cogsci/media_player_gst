@@ -202,6 +202,7 @@ class pygame_handler(object):
 		frame = self.main_player.frame_no
 		mov_width = self.main_player.destsize[0]
 		mov_height = self.main_player.destsize[1]
+		times_played = self.main_player.times_played
 		
 		# Easily callable pause function
 		# Use can now simply say pause() und unpause()
@@ -296,7 +297,7 @@ class OpenGL_renderer(object):
 		GL.glEnd()
 		
 		# Make sure there are no pending drawing operations and flip front and backbuffer
-		GL.glFlush()	
+		GL.glFlush()
 
 		
 #---------------------------------------------------------------------
@@ -338,17 +339,20 @@ class legacy_handler(pygame_handler):
 		"""
 		# Fill surface with background color
 		self.screen.fill(pygame.Color(str(self.main_player.experiment.background)))
+		self.last_drawn_frame_no = 0
 	
 	def draw_frame(self):
 		"""
 		Does the actual rendering of the buffer to the screen
 		"""	
 		
-		if hasattr(self,"frame") and not self.frame is None:
-			
+		if hasattr(self,"frame") and not self.frame is None:			
 			# Only draw frame to screen if timestamp is still within bounds of that of the player                
 			# Just skip the drawing otherwise (and continue until a frame comes in that is in bounds again)
-			if self.frame_on_time:
+			# Additionally, only draw each frame to screen once, to give the pygame (software-based) rendering engine
+			# some breathing space
+			
+			if self.frame_on_time and self.last_drawn_frame_no != self.main_player.frame_no:
 				# Write the video frame to the bufferproxy
 				self.imgBuffer.write(self.frame, 0)
 				
@@ -359,6 +363,8 @@ class legacy_handler(pygame_handler):
 				else:	
 				# In case movie needs to be displayed 1-on-1 blit directly to screen
 					self.screen.blit(self.img.copy(), self.main_player.vidPos)		
+				#self.swap_buffers()
+				self.last_drawn_frame_no = self.main_player.frame_no
 	
 		
 class expyriment_handler(OpenGL_renderer, pygame_handler):
@@ -480,6 +486,7 @@ class psychopy_handler(OpenGL_renderer):
 		frame = self.main_player.frame_no
 		mov_width = self.main_player.destsize[0]
 		mov_height = self.main_player.destsize[1]
+		times_played = self.main_player.times_played
 		
 		# Easily callable pause function
 		# Use can now simply call pause() to pause and unpause()
@@ -534,12 +541,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 		self.sendInfoToEyelink = u"no"
 		self.loop = u"no"
 		self.event_handler_trigger = u"on keypress"
-		
-		# class variables
-		self.event_handler = u""
-		self.frame_no = 0
-		self.frames_displayed = 0
-		self.frame_on_time = True
+		self.event_handler = u""				
 		
 		# The parent handles the rest of the construction
 		item.item.__init__(self, name, experiment, string)
@@ -576,12 +578,17 @@ class media_player_gst(item.item, generic_response.generic_response):
 		# Pass the word on to the parent
 		item.item.prepare(self)
 
-		# Prepare GST loop (for emitting bus messages from player)
+		# Prepare GST loop
 		gobject.threads_init()
 		self.gst_loop = gobject.MainLoop()	
 		
-		# Start gst loop (which listens for events from the player)
+		# Start gst loop (does internal gst event handling)
 		thread.start_new_thread(self.gst_loop.run, ())	
+		
+		# class variables
+		self.frame_no = 0		# The no of the current frame
+		self.frames_displayed = 0	# To determine how many frames have been dropped
+		self.times_played = 1		# When in loop mode, this variable maintains the times looped
 
 		# Byte-compile the event handling code (if any)
 		if self.event_handler.strip() != "":
@@ -651,7 +658,6 @@ class media_player_gst(item.item, generic_response.generic_response):
 		    'green_mask=(int)0x00ff00',
 		    'blue_mask=(int)0x0000ff',
 		])
-		
 		caps = gst.Caps(self._VIDEO_CAPS)
 
 		# Create videoplayer and load URI
@@ -676,10 +682,10 @@ class media_player_gst(item.item, generic_response.generic_response):
 		self.player.set_property('video-sink', self._videosink)
 
 		# Set functions for handling player messages
-		bus = self.player.get_bus()		
-		bus.enable_sync_message_emission()
-		bus.add_signal_watch()
-		bus.connect("message", self.__on_message)
+		self.bus = self.player.get_bus()		
+		#self.bus.enable_sync_message_emission()
+		#bus.add_signal_watch()
+		#bus.connect("message", self.__on_message)
 		
 		# Preroll movie to get dimension data
 		self.player.set_state(gst.STATE_PAUSED)
@@ -724,13 +730,13 @@ class media_player_gst(item.item, generic_response.generic_response):
 		self.frame_no += 1
 
 		# Check if the timestamp of the buffer is not too far behind on the internal clock of the player
-		# If computer is too slow for playing HD movies for instance, we need to drop frames 'manually'
-		frame_on_time = self.player.query_position(gst.FORMAT_TIME, None)[0] - buffer.timestamp < 25000000		
+		# If computer is too slow for playing HD movies for instance, we need to drop frames 'manually'		
+		frame_on_time = self.player.query_position(gst.FORMAT_TIME, None)[0] - buffer.timestamp < 250000000
 		
 		# Increase counter of frames displayed, to calculate real FPS at end of playback
 		if frame_on_time:
-			self.frames_displayed += 1	
-					
+			self.frames_displayed += 1
+								
 		# Send frame buffer to handler. Let it decide whether to show the video frame or not
 		# (OpenGL based handlers will always  be on time so frames will unlikely need to be dropped there)
 		self.handler.handle_videoframe(buffer.data, frame_on_time)	
@@ -783,14 +789,14 @@ class media_player_gst(item.item, generic_response.generic_response):
 			start_time = time.time()
 			while self.playing:
 				# Draw current frame to screen
-				self.handler.draw_frame()	
+				self.handler.draw_frame()
 				
 				# TODO: add section to let user optionally draw stuff on top of frame				
 				# Best is to advise them to use the frame_no				
 				
 				# Swap buffers to show drawn stuff on screen
 				self.handler.swap_buffers()
-				
+					
 				if not self.paused:						
 					# If connected to EyeLink and indicated that frame info should be sent.												
 					if self.sendInfoToEyelink == u"yes" and hasattr(self.experiment,"eyelink") and self.experiment.eyelink.connected():						
@@ -802,12 +808,31 @@ class media_player_gst(item.item, generic_response.generic_response):
 					self.playing = self.handler.process_user_input_customized()
 				elif not self._event_handler_always:				
 					self.playing = self.handler.process_user_input()
-							
+								
 				# Determine if playback should continue when a time limit is set
 				if type(self.duration) == int:
 					if time.time() - start_time > self.duration:
 						self.playing = False				
 								
+				# Check for GST events: End of stream and errors
+	
+				if self.bus.peek():
+					event = self.bus.poll(gst.MESSAGE_EOS|gst.MESSAGE_ERROR, 1)
+					if event:				
+						if event.type == gst.MESSAGE_EOS:
+							if self.loop == "yes":
+								# Seek to the beginning of the movie again and keep playing
+								self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, 1.0)
+								self.times_played += 1
+							else:
+								# Stop the player and quit the gst mainloop
+								self.playing = False
+						elif event.type == gst.MESSAGE_ERROR:
+							err, debug_info = event.parse_error()
+							print u"Gst Error: %s" % err, debug_info
+							self.close_streams()
+							raise osexception(u"Gst Error: %s" % err, debug_info)
+																							
 				# If gst loop is not running stop playback					
 				if not self.gst_loop.is_running():
 					self.playing = False								
@@ -818,7 +843,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 			# Clean up resources					
 			self.close_streams()
 			
-			# Print real frames per second
+			# Register real frames per second
 			fps_prop = 1.0 *self.frames_displayed/self.frame_no
 			real_fps =  self.fps * fps_prop 			
 			debug.msg(u"Movie displayed with {0} fps ({1}% of intended {2} fps)".format(round(real_fps,2), int(fps_prop*100), round(self.fps,2)))
@@ -837,43 +862,45 @@ class media_player_gst(item.item, generic_response.generic_response):
 		Returns:
 		True on success
 		"""
-		if self.gst_loop.is_running():		
-			# Quit the player's main event loop
-			self.gst_loop.quit()
+		if self.gst_loop.is_running():	
 			# Free resources claimed by gstreamer
 			self.player.set_state(gst.STATE_NULL)
+			# Quit the player's main event loop
+			self.gst_loop.quit()
+
 		
 		return True
 	
-	def __on_message(self, bus, message):	
-		"""
-		GStreamer callback function that listens from messages from the bus
-		
-		Arguments
-		bus -- The GStreamer bus element from which the message originates
-		message -- the object containing the message information
-		"""	
-		# determine type of message
-		t = message.type		
-		
-		# If end of movie has been reached
-		if t == gst.MESSAGE_EOS:
-			if self.loop == "yes":
-				# Seek to the beginning of the movie again and keep playing
-				self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, 1.0)
-			else:
-				# Stop the player and quit the gst mainloop
-				self.player.set_state(gst.STATE_NULL)	
-				self.gst_loop.quit()
-		
-		# If an error message has been received 
-		# (does not quite work yet as error messages are not correctly shown in OpenSesame)
-		elif t == gst.MESSAGE_ERROR:
-			err, debug_info = message.parse_error()
-			print u"Gst Error: %s" % err, debug_info
-			self.player.set_state(gst.STATE_NULL)
-			self.gst_loop.quit()
-			raise osexception(u"Gst Error: %s" % err, debug_info)	
+#	def __on_message(self, bus, message):	
+#		"""
+#		GStreamer callback function that listens from messages from the bus
+#		
+#		Arguments
+#		bus -- The GStreamer bus element from which the message originates
+#		message -- the object containing the message information
+#		"""	
+#		# determine type of message
+#		t = message.type		
+#		print t
+#		
+#		# If end of movie has been reached
+#		if t == gst.MESSAGE_EOS:
+#			if self.loop == "yes":
+#				# Seek to the beginning of the movie again and keep playing
+#				self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, 1.0)
+#			else:
+#				# Stop the player and quit the gst mainloop
+#				self.player.set_state(gst.STATE_NULL)	
+#				self.gst_loop.quit()
+#		
+#		# If an error message has been received 
+#		# (does not quite work yet as error messages are not correctly shown in OpenSesame)
+#		elif t == gst.MESSAGE_ERROR:
+#			err, debug_info = message.parse_error()
+#			print u"Gst Error: %s" % err, debug_info
+#			self.player.set_state(gst.STATE_NULL)
+#			self.gst_loop.quit()
+#			raise osexception(u"Gst Error: %s" % err, debug_info)	
 		
 	def var_info(self):
 		return generic_response.generic_response.var_info(self)
