@@ -28,15 +28,15 @@ libraries and Python modules.
 __author__ = "Daniel Schreij"
 __license__ = "GPLv3"
 
+# General modules
 import os, sys
-import thread			# To run the gst event loop with
+import thread				# To run the gst event loop with
 import time
 import urlparse, urllib		# To build the URI that gst requires
 
 # Import OpenSesame specific items
 from libopensesame import item, debug, generic_response
 from libopensesame.exceptions import osexception
-from libqtopensesame import qtplugin, pool_widget
 from libqtopensesame.items.qtautoplugin import qtautoplugin
 
 # Gstreamer components
@@ -335,7 +335,7 @@ class legacy_handler(pygame_handler):
 		
 	def prepare_for_playback(self):
 		"""
-		Just fills the screen with the background color for this backend
+		Setup screen for playback (Just fills the screen with the background color for this backend)
 		"""
 		# Fill surface with background color
 		self.screen.fill(pygame.Color(str(self.main_player.experiment.background)))
@@ -623,7 +623,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 
 		# Set handler of frames and user input
 		if self.has("canvas_backend"):
-			if self.get("canvas_backend") == u"legacy":				
+			if self.get("canvas_backend") == u"legacy" or self.get("canvas_backend") == u"droid":				
 				self.handler = legacy_handler(self, self.experiment.surface, custom_event_handler)
 			if self.get("canvas_backend") == u"psycho":				
 				self.handler = psychopy_handler(self, self.experiment.window, custom_event_handler)
@@ -683,9 +683,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 
 		# Set functions for handling player messages
 		self.bus = self.player.get_bus()		
-		#self.bus.enable_sync_message_emission()
-		#bus.add_signal_watch()
-		#bus.connect("message", self.__on_message)
+		self.bus.enable_sync_message_emission()
 		
 		# Preroll movie to get dimension data
 		self.player.set_state(gst.STATE_PAUSED)
@@ -723,6 +721,15 @@ class media_player_gst(item.item, generic_response.generic_response):
 		self.file_loaded = True	
 		
 	def __handle_videoframe(self, appsink):
+		"""
+		Callback function for GStreamer to pass the decoded videoframe to.
+		This function first checks if the frame is not lagging behind to much compared to the
+		player's internal timer and, if not, passes it on to the handler which draws the frame to the screen
+		
+		Arguments
+		appsink 	-- the videosink element that sent the video frame
+		"""		
+		
 		# Get buffer from videosink
 		buffer = appsink.emit('pull-buffer')
 							
@@ -792,7 +799,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 				self.handler.draw_frame()
 				
 				# TODO: add section to let user optionally draw stuff on top of frame				
-				# Best is to advise them to use the frame_no				
+				# Best is to advise them to use the frame_no	 if they want to do this			
 				
 				# Swap buffers to show drawn stuff on screen
 				self.handler.swap_buffers()
@@ -803,7 +810,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 						self.experiment.eyelink.log(u"videoframe %s" % self.frame_no)
 						self.experiment.eyelink.status_msg(u"videoframe %s" % self.frame_no )
 				
-				# Listen for events 								
+				# Handle input events								
 				if self._event_handler_always:
 					self.playing = self.handler.process_user_input_customized()
 				elif not self._event_handler_always:				
@@ -815,23 +822,25 @@ class media_player_gst(item.item, generic_response.generic_response):
 						self.playing = False				
 								
 				# Check for GST events: End of stream and errors
-	
-				if self.bus.peek():
-					event = self.bus.poll(gst.MESSAGE_EOS|gst.MESSAGE_ERROR, 1)
-					if event:				
-						if event.type == gst.MESSAGE_EOS:
-							if self.loop == "yes":
-								# Seek to the beginning of the movie again and keep playing
-								self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, 1.0)
-								self.times_played += 1
-							else:
-								# Stop the player and quit the gst mainloop
-								self.playing = False
-						elif event.type == gst.MESSAGE_ERROR:
-							err, debug_info = event.parse_error()
-							print u"Gst Error: %s" % err, debug_info
-							self.close_streams()
-							raise osexception(u"Gst Error: %s" % err, debug_info)
+				# Strangely, pop() is the only method that does not make gstreamer
+				# crash in multiprocessing mode under Ubuntu
+				event = self.bus.pop()	
+				if event:		
+					# End of stream event
+					if event.type == gst.MESSAGE_EOS:
+						# If in loop mode, seek to the beginning of the movie again and keep playing
+						if self.loop == "yes":							
+							self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, 1.0)
+							self.times_played += 1
+						else:
+							# Stop the player
+							self.playing = False
+					# On error print and quit		
+					elif event.type == gst.MESSAGE_ERROR:
+						err, debug_info = event.parse_error()
+						print u"Gst Error: %s" % err, debug_info
+						self.close_streams()
+						raise osexception(u"Gst Error: %s" % err, debug_info)
 																							
 				# If gst loop is not running stop playback					
 				if not self.gst_loop.is_running():
@@ -855,9 +864,9 @@ class media_player_gst(item.item, generic_response.generic_response):
 			raise osexception(u"No video loaded")
 
 	def close_streams(self):
-	
 		"""
-		A cleanup function, to make sure that the video files are closed
+		A cleanup function, to make sure that the video files are closed and 
+		any resources taken up by GStreamer are freed
 
 		Returns:
 		True on success
@@ -870,38 +879,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 
 		
 		return True
-	
-#	def __on_message(self, bus, message):	
-#		"""
-#		GStreamer callback function that listens from messages from the bus
-#		
-#		Arguments
-#		bus -- The GStreamer bus element from which the message originates
-#		message -- the object containing the message information
-#		"""	
-#		# determine type of message
-#		t = message.type		
-#		print t
-#		
-#		# If end of movie has been reached
-#		if t == gst.MESSAGE_EOS:
-#			if self.loop == "yes":
-#				# Seek to the beginning of the movie again and keep playing
-#				self.player.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, 1.0)
-#			else:
-#				# Stop the player and quit the gst mainloop
-#				self.player.set_state(gst.STATE_NULL)	
-#				self.gst_loop.quit()
-#		
-#		# If an error message has been received 
-#		# (does not quite work yet as error messages are not correctly shown in OpenSesame)
-#		elif t == gst.MESSAGE_ERROR:
-#			err, debug_info = message.parse_error()
-#			print u"Gst Error: %s" % err, debug_info
-#			self.player.set_state(gst.STATE_NULL)
-#			self.gst_loop.quit()
-#			raise osexception(u"Gst Error: %s" % err, debug_info)	
-		
+			
 	def var_info(self):
 		return generic_response.generic_response.var_info(self)
 
