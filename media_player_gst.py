@@ -94,14 +94,17 @@ class pygame_handler(object):
 		self.screen = screen
 		self.custom_event_code = custom_event_code	
 	
-	def handle_videoframe(self, frame):
+	def handle_videoframe(self, frame, frame_on_time):
 		"""
 		Callback method for handling a video frame
 
 		Arguments:
 		frame - the video frame supplied as a str/bytes object
+		frame_on_time - (True|False) indicates if renderer is lagging behind
+			internal frame counter of the player (False) or is still in sync (True)
 		"""	
 		self.frame = frame	
+		self.frame_on_time = frame_on_time
 		
 	def swap_buffers(self):
 		"""
@@ -255,7 +258,7 @@ class OpenGL_renderer(object):
 		GL.glMatrixMode(GL.GL_MODELVIEW)				
 		GL.glPopMatrix()
 		
-	def draw_buffer(self):		
+	def draw_frame(self):		
 		"""
 		Does the actual rendering of the buffer to the screen
 		"""	
@@ -293,8 +296,7 @@ class OpenGL_renderer(object):
 		GL.glEnd()
 		
 		# Make sure there are no pending drawing operations and flip front and backbuffer
-		GL.glFlush()				
-		self.swap_buffers()		
+		GL.glFlush()	
 
 		
 #---------------------------------------------------------------------
@@ -331,28 +333,32 @@ class legacy_handler(pygame_handler):
 			self.dest_surface = pygame.Surface(self.main_player.destsize, pygame.SWSURFACE, 24, (255, 65280, 16711680, 0))		
 		
 	def prepare_for_playback(self):
+		"""
+		Just fills the screen with the background color for this backend
+		"""
 		# Fill surface with background color
 		self.screen.fill(pygame.Color(str(self.main_player.experiment.background)))
 	
-	def draw_buffer(self):
+	def draw_frame(self):
 		"""
 		Does the actual rendering of the buffer to the screen
 		"""	
 		
 		if hasattr(self,"frame") and not self.frame is None:
-			# Write the video frame to the bufferproxy
-			self.imgBuffer.write(self.frame, 0)
 			
-			# If resize option is selected, resize frame to screen/window dimensions and blit
-			if hasattr(self, "dest_surface"):
-				pygame.transform.scale(self.img, self.main_player.destsize, self.dest_surface)
-				self.screen.blit(self.dest_surface, self.main_player.vidPos)
-			else:	
-			# In case movie needs to be displayed 1-on-1 blit directly to screen
-				self.screen.blit(self.img.copy(), self.main_player.vidPos)
-		
-		# Show them the money!
-		self.swap_buffers()
+			# Only draw frame to screen if timestamp is still within bounds of that of the player                
+			# Just skip the drawing otherwise (and continue until a frame comes in that is in bounds again)
+			if self.frame_on_time:
+				# Write the video frame to the bufferproxy
+				self.imgBuffer.write(self.frame, 0)
+				
+				# If resize option is selected, resize frame to screen/window dimensions and blit
+				if hasattr(self, "dest_surface"):
+					pygame.transform.scale(self.img, self.main_player.destsize, self.dest_surface)
+					self.screen.blit(self.dest_surface, self.main_player.vidPos)
+				else:	
+				# In case movie needs to be displayed 1-on-1 blit directly to screen
+					self.screen.blit(self.img.copy(), self.main_player.vidPos)		
 	
 		
 class expyriment_handler(OpenGL_renderer, pygame_handler):
@@ -370,8 +376,6 @@ class expyriment_handler(OpenGL_renderer, pygame_handler):
 		self.GL = GL
 		self.texid = GL.glGenTextures(1)	
 		
-
-						
 		
 class psychopy_handler(OpenGL_renderer):
 	"""
@@ -403,14 +407,17 @@ class psychopy_handler(OpenGL_renderer):
 		self.texid = GL.GLuint()
 		GL.glGenTextures(1, ctypes.byref(self.texid))
 					
-	def handle_videoframe(self, frame):
+	def handle_videoframe(self, frame, frame_on_time):
 		"""
 		Callback method for handling a video frame
 
 		Arguments:
 		frame - the video frame supplied as a str/bytes object
+		frame_on_time - (True|False) indicates if renderer is lagging behind
+			internal frame counter of the player (False) or is still in sync (True)
 		"""		
 		self.frame = frame
+		self.frame_on_time = frame_on_time
 		
 	def swap_buffers(self):
 		"""Draw buffer to screen"""
@@ -532,6 +539,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 		self.event_handler = u""
 		self.frame_no = 0
 		self.frames_displayed = 0
+		self.frame_on_time = True
 		
 		# The parent handles the rest of the construction
 		item.item.__init__(self, name, experiment, string)
@@ -556,7 +564,6 @@ class media_player_gst(item.item, generic_response.generic_response):
 			return (int(image_res[0] * screen_res[1]/image_res[1]), screen_res[1])
 		else:
 			return (screen_res[0], int(image_res[1]*screen_res[0]/image_res[0]))
-		
 
 	def prepare(self):
 		"""
@@ -709,16 +716,24 @@ class media_player_gst(item.item, generic_response.generic_response):
 		self.vidPos = ((self.experiment.width - self.destsize[0]) / 2, (self.experiment.height - self.destsize[1]) / 2)		
 		self.file_loaded = True	
 		
-		
 	def __handle_videoframe(self, appsink):
+		# Get buffer from videosink
 		buffer = appsink.emit('pull-buffer')
 							
 		# increment frame counter
 		self.frame_no += 1
+
+		# Check if the timestamp of the buffer is not too far behind on the internal clock of the player
+		# If computer is too slow for playing HD movies for instance, we need to drop frames 'manually'
+		frame_on_time = self.player.query_position(gst.FORMAT_TIME, None)[0] - buffer.timestamp < 25000000		
 		
-		# Send frame buffer to handler.			
-		self.handler.handle_videoframe(buffer.data)	
-						
+		# Increase counter of frames displayed, to calculate real FPS at end of playback
+		if frame_on_time:
+			self.frames_displayed += 1	
+					
+		# Send frame buffer to handler. Let it decide whether to show the video frame or not
+		# (OpenGL based handlers will always  be on time so frames will unlikely need to be dropped there)
+		self.handler.handle_videoframe(buffer.data, frame_on_time)	
 
 	def pause(self):
 		""" 
@@ -768,7 +783,13 @@ class media_player_gst(item.item, generic_response.generic_response):
 			start_time = time.time()
 			while self.playing:
 				# Draw current frame to screen
-				self.handler.draw_buffer()	
+				self.handler.draw_frame()	
+				
+				# TODO: add section to let user optionally draw stuff on top of frame				
+				# Best is to advise them to use the frame_no				
+				
+				# Swap buffers to show drawn stuff on screen
+				self.handler.swap_buffers()
 				
 				if not self.paused:						
 					# If connected to EyeLink and indicated that frame info should be sent.												
@@ -805,7 +826,6 @@ class media_player_gst(item.item, generic_response.generic_response):
 			# Do some OpenSesame bookkeeping concerning responses
 			generic_response.generic_response.response_bookkeeping(self)			
 			return True
-
 		else:
 			raise osexception(u"No video loaded")
 
@@ -825,7 +845,6 @@ class media_player_gst(item.item, generic_response.generic_response):
 		
 		return True
 	
-	
 	def __on_message(self, bus, message):	
 		"""
 		GStreamer callback function that listens from messages from the bus
@@ -836,7 +855,6 @@ class media_player_gst(item.item, generic_response.generic_response):
 		"""	
 		# determine type of message
 		t = message.type		
-		print t
 		
 		# If end of movie has been reached
 		if t == gst.MESSAGE_EOS:
@@ -885,7 +903,6 @@ class qtmedia_player_gst(media_player_gst, qtautoplugin):
 		# Pass the word on to the parents
 		media_player_gst.__init__(self, name, experiment, script)
 		qtautoplugin.__init__(self, __file__)
-
 
 	def apply_edit_changes(self):
 		
