@@ -33,6 +33,7 @@ On OS X I found it was easiest to install the framework by using the package man
     brew update
     brew install /homebrew/versions/gstreamer010
     brew install gstreamer-plugins-good010
+    brew install https://raw.github.com/Psychtoolbox-3/homebrew-versions/gst-ffmpeg010/gst-ffmpeg010.rb
     brew install gstreamer-python010
 
 ### Running the plugin
