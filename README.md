@@ -28,7 +28,7 @@ Under Windows select custom installation and make sure the box before `GStreamer
 
 ### OS X
 
-On OS X you can also install GStreamer by using the installer from [the GStreamer SDK website][gst-dl]. Don't forget to install the libav wrapper plugin! You can do this by clicking on *Customize* in the "Installation Type" section and then tick the box next to *GStreamer libav wrapper*.
+On OS X you can also install GStreamer by using the installer from [the GStreamer SDK website][gst-dl]. Don't forget to install the libav wrapper plugin! You can do this by clicking on *Customize* in the "Installation Type" section and then tick the box next to *GStreamer libav wrapper*. You only need to install the runtime files (and not the development files even though this is stated as necessary on the website).
 
 ### Running the plugin
 
