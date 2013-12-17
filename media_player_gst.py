@@ -54,6 +54,10 @@ if os.name == "nt":
 		';' + os.environ['PATH']
 	sys.path.append(os.path.join(GSTREAMER_PATH, '0.10','x86','lib', \
 		'python2.7','site-packages'))
+if os.name == "posix" and sys.platform == "darwin":
+	# For OS X
+	# When installed with the GStreamer SDK installers from GStreamer.com
+	sys.path.append("/Library/Frameworks/GStreamer.framework/Versions/Current/lib/python2.7/site-packages")
 		
 # Try to load Gstreamer
 try:
