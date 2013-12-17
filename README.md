@@ -12,15 +12,30 @@ The media_player_gst plug-in adds video playback capabilities to the [OpenSesame
 ##Plug-in installation
 If this plugin came with your OpenSesame installation, it should work directly out of the box. If it did not (for instance because you are running OpenSesame from source), you will probably need to install the GStreamer framework yourself before you can use the plugin. 
 
+### Ubuntu 
+
 In (Ubuntu) Linux, you can easily install GStreamer with the command
 
     sudo apt-get install gstreamer0.10-tools gstreamer-tools gstreamer0.10-plugins-base gstreamer0.10-ffmpeg 
 
-(if it is not installed by default, which is sometimes the case in Ubuntu)
+(if it is not already installed by default, which is sometimes the case in Ubuntu)
 
-For Windows and Mac (and also for Linux if the above did not work for you) you can download the appropriate GStreamer distributables from [the GStreamer website][gst-dl]. Whether you need to download the 32-bit or 64-bit variant depends on your Python installation. If you have installed a 32-bit Python, you will need the 32-bit version of GStreamer and vice versa for 64-bit (Note that this has nothing to do with the architecture of your OS: if you installed a 32-bit Python on your 64-bit OS, you still require the 32-bit version of GStreamer). 
+### Windows
+
+For Windows (and also for Linux if the above did not work for you or you are using another distribution than Ubuntu) you can download the appropriate GStreamer distributables from [the GStreamer website][gst-dl]. Whether you need to download the 32-bit or 64-bit variant depends on your Python installation. If you have installed a 32-bit Python, you will need the 32-bit version of GStreamer and vice versa for 64-bit (Note that this has nothing to do with the architecture of your OS: if you installed a 32-bit Python on your 64-bit OS, you still require the 32-bit version of GStreamer). 
 
 Under Windows select custom installation and make sure the box before `libav wrapper` is checked. This add-on contains the codecs you need to be able to play most current video and audio formats and if you forget this, you will inevitably bump into problems sooner or later, so don't ;)
+
+### OS X
+
+On OS X I found it was easiest to install the framework by using the package manager [homebrew][homebrew-home]. You can also try to install GStreamer by using the installer from [GStreamer.com][gst-dl], but I missed some plugins which were necessary for playing h.264 files, and coundn't find instruction anywhere on how to add these manually (if anyone knows how please contact me!). You can install the GStreamer framework by simply issuing the following commands in a terminal window:
+
+    brew update
+    brew install /homebrew/versions/gstreamer010
+    brew install gstreamer-plugins-good010
+    brew install gstreamer-python010
+
+### Running the plugin
 
 The plugin will automatically find your GStreamer installation if it has been installed to its default location (which on windows is usually `c:\gstreamer-sdk\`). If you needed to install it to a different folder, you will need to edit the variable GSTREAMER_PATH somewhere at the top section of media_player_gst.py and make it point to the location at which you have installed GStreamer.
 
@@ -56,4 +71,5 @@ Next to these variables you also have the following functions at your disposal:
 [gst]: http://www.gstreamer.com/
 [gst-dl]: http://docs.gstreamer.com/display/GstSDK/Installing+the+SDK
 [libav]: http://libav.org/
+[homebrew-home]: http://brew.sh/
 
