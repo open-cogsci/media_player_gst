@@ -28,7 +28,7 @@ Under Windows select custom installation and make sure the box before `libav wra
 
 ### OS X
 
-On OS X I found it was easiest to install the framework by using the package manager [homebrew][homebrew-home]. You can also try to install GStreamer by using the installer from [GStreamer.com][gst-dl], but I missed some plugins which were necessary for playing h.264 files, and coundn't find instruction anywhere on how to add these manually (if anyone knows how please contact me!). You can install the GStreamer framework by simply issuing the following commands in a terminal window:
+On OS X I found it was easiest to install the framework by using the package manager [homebrew][homebrew-home]. You can also try to install GStreamer by using the installer from [GStreamer.com][gst-dl], but this version seemed to miss some plugins necessary for decoding h.264 files, and I coundn't find instructions anywhere on how to add these plugins manually (if anyone knows how please contact me!). You can install the GStreamer framework with homebrew by simply issuing the following commands in a terminal window:
 
     brew update
     brew install /homebrew/versions/gstreamer010
