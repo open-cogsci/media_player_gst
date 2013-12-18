@@ -32,6 +32,7 @@ On OS X you can also install GStreamer by using the installer from [the GStreame
 
 ### Running the plugin
 
+Extract the the plugin as a folder named media_player_gst in the OpenSesame/plugin folder (or ./opensesame/plugins on Linux/OS X or AppData/Roaming/opensesame/plugins on Windows).
 The plugin will automatically find your GStreamer installation if it has been installed to its default location (which on windows is usually `c:\gstreamer-sdk\`). If you needed to install it to a different folder, you will need to edit the variable GSTREAMER_PATH somewhere at the top section of media_player_gst.py and make it point to the location at which you have installed GStreamer.
 
 If you followed all the above steps correctly, OpenSesame should now be able to succesfully import the media_player_gst plugin, when it is placed in your experiment structure, and be able to play any movies it is supplied.
@@ -66,5 +67,3 @@ Next to these variables you also have the following functions at your disposal:
 [gst]: http://www.gstreamer.com/
 [gst-dl]: http://docs.gstreamer.com/display/GstSDK/Installing+the+SDK
 [libav]: http://libav.org/
-[homebrew-home]: http://brew.sh/
-
