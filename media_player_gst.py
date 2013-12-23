@@ -232,7 +232,7 @@ class OpenGL_renderer(object):
 	"""
 	Superclass for both the expyriment and psychopy handlers. Both these backends 
 	are OpenGL based and basically have the same drawing routines. 
-	This way they only need to be defined once for both classes.
+	By inheriting from this class, they only need to be defined once in here.
 	"""
 	
 	def __init__(self):
@@ -741,7 +741,7 @@ class media_player_gst(item.item, generic_response.generic_response):
 
 		# Check if the timestamp of the buffer is not too far behind on the internal clock of the player
 		# If computer is too slow for playing HD movies for instance, we need to drop frames 'manually'		
-		self.frame_on_time = self.player.query_position(gst.FORMAT_TIME, None)[0] - buffer.timestamp < 500000000
+		self.frame_on_time = self.player.query_position(gst.FORMAT_TIME, None)[0] - buffer.timestamp < 10**8
 				
 		# Send frame buffer to handler if frame was on time
 		if self.frame_on_time:
