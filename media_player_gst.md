@@ -8,6 +8,8 @@ The media_player_gst plug-in adds video playback capabilities to the [OpenSesame
 - Frames are drawn internally by OpenSesame, offering more control such as determining which frame is currently shown, making screenshots, or even the possibility of real-time drawing on top of the shown video frames.
 - Multi-platform; should work in Windows, Linux and (in the future) Mac and Android versions of OpenSesame.
 
+The best playback will be achieved by using the hardware accelerated Psychopy or Expyriment backend. Performance might be lacking with the legacy backend when the movie is of a high resolution of has a high frame rate.
+
 ## Plugin settings
 The plugin offers the following configuration options from the GUI:
 
