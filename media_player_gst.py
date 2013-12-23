@@ -98,7 +98,7 @@ class pygame_handler(object):
 		self.screen = screen
 		self.custom_event_code = custom_event_code	
 	
-	def handle_videoframe(self, frame, frame_on_time):
+	def handle_videoframe(self, frame):
 		"""
 		Callback method for handling a video frame
 
@@ -108,7 +108,6 @@ class pygame_handler(object):
 			internal frame counter of the player (False) or is still in sync (True)
 		"""	
 		self.frame = frame	
-		self.frame_on_time = frame_on_time
 		
 	def swap_buffers(self):
 		"""
@@ -350,13 +349,10 @@ class legacy_handler(pygame_handler):
 		Does the actual rendering of the buffer to the screen
 		"""	
 		
-		if hasattr(self,"frame") and not self.frame is None:			
-			# Only draw frame to screen if timestamp is still within bounds of that of the player                
-			# Just skip the drawing otherwise (and continue until a frame comes in that is in bounds again)
-			# Additionally, only draw each frame to screen once, to give the pygame (software-based) rendering engine
+		if hasattr(self,"frame") and not self.frame is None:					
+			# Only draw each frame to screen once, to give the pygame (software-based) rendering engine
 			# some breathing space
-			
-			if self.frame_on_time and self.last_drawn_frame_no != self.main_player.frame_no:
+			if self.last_drawn_frame_no != self.main_player.frame_no:
 				# Write the video frame to the bufferproxy
 				self.imgBuffer.write(self.frame, 0)
 				
@@ -367,7 +363,7 @@ class legacy_handler(pygame_handler):
 				else:	
 				# In case movie needs to be displayed 1-on-1 blit directly to screen
 					self.screen.blit(self.img.copy(), self.main_player.vidPos)		
-				#self.swap_buffers()
+	
 				self.last_drawn_frame_no = self.main_player.frame_no
 	
 		
@@ -417,7 +413,7 @@ class psychopy_handler(OpenGL_renderer):
 		self.texid = GL.GLuint()
 		GL.glGenTextures(1, ctypes.byref(self.texid))
 					
-	def handle_videoframe(self, frame, frame_on_time):
+	def handle_videoframe(self, frame):
 		"""
 		Callback method for handling a video frame
 
@@ -427,7 +423,6 @@ class psychopy_handler(OpenGL_renderer):
 			internal frame counter of the player (False) or is still in sync (True)
 		"""		
 		self.frame = frame
-		self.frame_on_time = frame_on_time
 		
 	def swap_buffers(self):
 		"""Draw buffer to screen"""
@@ -590,9 +585,11 @@ class media_player_gst(item.item, generic_response.generic_response):
 		thread.start_new_thread(self.gst_loop.run, ())	
 		
 		# class variables
-		self.frame_no = 0		# The no of the current frame
+		self.frame_no = 0			# The no of the current frame
 		self.frames_displayed = 0	# To determine how many frames have been dropped
 		self.times_played = 1		# When in loop mode, this variable maintains the times looped
+		self.frame_on_time = True	# Init variable to be used later
+		self.frame_locked = False
 
 		# Byte-compile the event handling code (if any)
 		if self.event_handler.strip() != "":
@@ -733,6 +730,8 @@ class media_player_gst(item.item, generic_response.generic_response):
 		Arguments
 		appsink 	-- the videosink element that sent the video frame
 		"""		
+		# Make sure frame is not accessed while being written (don't know if this matters)		
+		self.frame_locked = True
 		
 		# Get buffer from videosink
 		buffer = appsink.emit('pull-buffer')
@@ -742,15 +741,13 @@ class media_player_gst(item.item, generic_response.generic_response):
 
 		# Check if the timestamp of the buffer is not too far behind on the internal clock of the player
 		# If computer is too slow for playing HD movies for instance, we need to drop frames 'manually'		
-		frame_on_time = self.player.query_position(gst.FORMAT_TIME, None)[0] - buffer.timestamp < 250000000
+		self.frame_on_time = self.player.query_position(gst.FORMAT_TIME, None)[0] - buffer.timestamp < 500000000
+				
+		# Send frame buffer to handler if frame was on time
+		if self.frame_on_time:
+			self.handler.handle_videoframe(buffer.data)	
 		
-		# Increase counter of frames displayed, to calculate real FPS at end of playback
-		if frame_on_time:
-			self.frames_displayed += 1
-								
-		# Send frame buffer to handler. Let it decide whether to show the video frame or not
-		# (OpenGL based handlers will always  be on time so frames will unlikely need to be dropped there)
-		self.handler.handle_videoframe(buffer.data, frame_on_time)	
+		self.frame_locked = False
 
 	def pause(self):
 		""" 
@@ -799,15 +796,22 @@ class media_player_gst(item.item, generic_response.generic_response):
 			### Main player loop. While True, the movie is playing
 			start_time = time.time()
 			while self.playing:
-				# Draw current frame to screen
-				self.handler.draw_frame()
-				
-				# TODO: add section to let user optionally draw stuff on top of frame				
-				# Best is to advise them to use the frame_no	 if they want to do this			
-				
-				# Swap buffers to show drawn stuff on screen
-				self.handler.swap_buffers()
+				# Only draw frame to screen if timestamp is still within bounds of that of the player                
+				# Just skip the drawing otherwise (and continue until a frame comes in that is in bounds again)	
+				# self.frame_on_time = True
+				if self.frame_on_time and not self.frame_locked:
+					# Draw current frame to screen
+					self.handler.draw_frame()
 					
+					# TODO: add section to let user optionally draw stuff on top of frame				
+					# Best is to advise them to use the frame_no	 if they want to do this			
+					
+					# Swap buffers to show drawn stuff on screen
+					self.handler.swap_buffers()
+					
+					# Increase counter of frames displayed, to calculate real FPS at end of playback
+					self.frames_displayed += 1
+				
 				if not self.paused:						
 					# If connected to EyeLink and indicated that frame info should be sent.												
 					if self.sendInfoToEyelink == u"yes" and hasattr(self.experiment,"eyelink") and self.experiment.eyelink.connected():						
