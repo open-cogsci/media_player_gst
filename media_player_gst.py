@@ -33,6 +33,7 @@ import os, sys
 import thread				# To run the gst event loop with
 import time
 import urlparse, urllib		# To build the URI that gst requires
+import numpy as np			# Only to easily create a black texture to start with
 
 # Import OpenSesame specific items
 from libopensesame import item, debug, generic_response
@@ -253,6 +254,18 @@ class OpenGL_renderer(object):
 		GL.glOrtho(0.0,  self.main_player.experiment.width,  self.main_player.experiment.height, 0.0, 0.0, 1.0)		
 		GL.glMatrixMode(GL.GL_MODELVIEW)
 		
+		# Create black empty texture to start with, to prevent artifacts
+		img = np.zeros([self.main_player.vidsize[0], self.main_player.vidsize[1],3], dtype=np.uint8)
+		img.fill(0) 
+		
+		GL.glEnable(GL.GL_TEXTURE_2D)
+		GL.glBindTexture(GL.GL_TEXTURE_2D, self.texid)
+		GL.glTexImage2D( GL.GL_TEXTURE_2D, 0, GL.GL_RGB, self.main_player.vidsize[0], self.main_player.vidsize[1], 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, img.tostring())
+		GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+		GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)	
+		
+		GL.glClear(GL.GL_COLOR_BUFFER_BIT|GL.GL_DEPTH_BUFFER_BIT)	
+		
 	def playback_finished(self):
 		""" Restore previous OpenGL context as before playback """
 		GL = self.GL
@@ -276,21 +289,10 @@ class OpenGL_renderer(object):
 		GL.glColor4f(1,1,1,1)
 						
 		# Only if a frame has been set, blit it to the texture
-		if hasattr(self,"frame") and not self.frame is None:			    	
-			texture_width = self.main_player.vidsize[0]
-			texture_height = self.main_player.vidsize[1]
-	
-			GL.glClear(GL.GL_COLOR_BUFFER_BIT|GL.GL_DEPTH_BUFFER_BIT)	
+		if hasattr(self,"frame") and not self.frame is None:			    				
 			GL.glLoadIdentity()
-		
-			GL.glEnable(GL.GL_TEXTURE_2D)
-		
-			GL.glBindTexture(GL.GL_TEXTURE_2D, self.texid)
-			GL.glTexImage2D( GL.GL_TEXTURE_2D, 0, GL.GL_RGB, texture_width, texture_height, 0,
-				      GL.GL_RGB, GL.GL_UNSIGNED_BYTE, self.frame );
-			GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
-			GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)	
-			
+			GL.glTexSubImage2D( GL.GL_TEXTURE_2D, 0, 0, 0, self.main_player.vidsize[0], self.main_player.vidsize[1], GL.GL_RGB, GL.GL_UNSIGNED_BYTE, self.frame)
+					
 		# Drawing of the quad on which the frame texture is projected
 		GL.glBegin(GL.GL_QUADS)
 		GL.glTexCoord2f(0.0, 0.0); GL.glVertex3i(x, y, 0)
