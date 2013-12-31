@@ -45,16 +45,14 @@ from libqtopensesame.items.qtautoplugin import qtautoplugin
 # If The Gstreamer SDK is found in the plugin folder, add the relevant paths
 # so that we use this framework. This is Windows only.
 if os.name == "nt":
-	if os.path.exists(os.path.join(os.path.dirname(__file__), \
-		'gstreamer-sdk')):
-		GSTREAMER_PATH = os.path.join(os.path.dirname(__file__), \
-		'gstreamer-sdk')
+	if hasattr(sys,"frozen") and sys.frozen in ("windows_exe", "console_exe"):
+		exe_path = os.path.dirname(sys.executable)
+		os.environ["PATH"] = os.path.join(exe_path, "gstreamer", "dll") + ';' + os.environ["PATH"]
+		os.environ["GST_PLUGIN_PATH"] = os.path.join(exe_path, "gstreamer", "plugins")
+		sys.path.append(os.path.join(exe_path, "gstreamer", "python"))		
 	else:
-		GSTREAMER_PATH = r"C:\gstreamer-sdk"
-	os.environ['PATH'] = os.path.join(GSTREAMER_PATH, '0.10', 'x86', 'bin') + \
-		';' + os.environ['PATH']
-	sys.path.append(os.path.join(GSTREAMER_PATH, '0.10','x86','lib', \
-		'python2.7','site-packages'))
+		os.environ["PATH"] = os.path.join(os.environ["GSTREAMER_SDK_ROOT_X86"],"bin") + ';' + os.environ["PATH"]
+		sys.path.append(os.path.join(os.environ["GSTREAMER_SDK_ROOT_X86"],"lib","python2.7","site-packages"))
 if os.name == "posix" and sys.platform == "darwin":
 	# For OS X
 	# When installed with the GStreamer SDK installers from GStreamer.com
