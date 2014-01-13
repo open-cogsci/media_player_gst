@@ -37,8 +37,13 @@ import numpy as np			# Only to easily create a black texture to start with
 
 # Import OpenSesame specific items
 from libopensesame import item, debug, generic_response
-from libopensesame.exceptions import osexception
 from libqtopensesame.items.qtautoplugin import qtautoplugin
+# The `osexception` class is only available as of OpenSesame 2.8.0. If it is not
+# available, fall back to the regular `Exception` class.
+try:
+	from libopensesame.exceptions import osexception
+except:
+	osexception = Exception
 
 # Gstreamer components
 
