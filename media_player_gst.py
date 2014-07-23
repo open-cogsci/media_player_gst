@@ -50,14 +50,23 @@ except:
 # If The Gstreamer SDK is found in the plugin folder, add the relevant paths
 # so that we use this framework. This is Windows only.
 if os.name == "nt":
+	gst_found = False
+	
+	# When opensesame is packaged, check if GStreamer has been packaged with it and set paths accordingly
 	if hasattr(sys,"frozen") and sys.frozen in ("windows_exe", "console_exe"):
 		exe_path = os.path.dirname(sys.executable)
-		os.environ["PATH"] = os.path.join(exe_path, "gstreamer", "dll") + ';' + os.environ["PATH"]
-		os.environ["GST_PLUGIN_PATH"] = os.path.join(exe_path, "gstreamer", "plugins")
-		sys.path.append(os.path.join(exe_path, "gstreamer", "python"))		
-	else:
+		packaged_gst_path = os.path.join(exe_path, "gstreamer", "dll")
+		if os.path.exists(packaged_gst_path):					
+			os.environ["PATH"] = os.path.join(exe_path, "gstreamer", "dll") + ';' + os.environ["PATH"]
+			os.environ["GST_PLUGIN_PATH"] = os.path.join(exe_path, "gstreamer", "plugins")
+			sys.path.append(os.path.join(exe_path, "gstreamer", "python"))
+			gst_found = True
+	
+	# If gst has not bee packaged. Check if GStreamer is located at its default location as set in os.environ
+	if not gst_found:
 		os.environ["PATH"] = os.path.join(os.environ["GSTREAMER_SDK_ROOT_X86"],"bin") + ';' + os.environ["PATH"]
 		sys.path.append(os.path.join(os.environ["GSTREAMER_SDK_ROOT_X86"],"lib","python2.7","site-packages"))
+
 if os.name == "posix" and sys.platform == "darwin":
 	# For OS X
 	# When installed with the GStreamer SDK installers from GStreamer.com
