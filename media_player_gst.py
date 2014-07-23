@@ -56,16 +56,24 @@ if os.name == "nt":
 	if hasattr(sys,"frozen") and sys.frozen in ("windows_exe", "console_exe"):
 		exe_path = os.path.dirname(sys.executable)
 		packaged_gst_path = os.path.join(exe_path, "gstreamer", "dll")
-		if os.path.exists(packaged_gst_path):					
+		# Check for existence of packaged gst folder		
+		if os.path.exists(packaged_gst_path):
+			debug.msg("GStreamer found at: " + packaged_gst_path)					
 			os.environ["PATH"] = os.path.join(exe_path, "gstreamer", "dll") + ';' + os.environ["PATH"]
 			os.environ["GST_PLUGIN_PATH"] = os.path.join(exe_path, "gstreamer", "plugins")
 			sys.path.append(os.path.join(exe_path, "gstreamer", "python"))
 			gst_found = True
+		else:
+			debug.msg("GStreamer not found at packaged location")	
 	
-	# If gst has not bee packaged. Check if GStreamer is located at its default location as set in os.environ
-	if not gst_found:
-		os.environ["PATH"] = os.path.join(os.environ["GSTREAMER_SDK_ROOT_X86"],"bin") + ';' + os.environ["PATH"]
-		sys.path.append(os.path.join(os.environ["GSTREAMER_SDK_ROOT_X86"],"lib","python2.7","site-packages"))
+	# If Gstreamer has not been packaged. Check if GStreamer is located at its default location as set in os.environ
+	if not gst_found:		
+		if "GSTREAMER_SDK_ROOT_X86" in os.environ:
+			debug.msg("GStreamer found at: " + os.environ["GSTREAMER_SDK_ROOT_X86"])							
+			os.environ["PATH"] = os.path.join(os.environ["GSTREAMER_SDK_ROOT_X86"],"bin") + ';' + os.environ["PATH"]
+			sys.path.append(os.path.join(os.environ["GSTREAMER_SDK_ROOT_X86"],"lib","python2.7","site-packages"))
+		else:
+			debug.msg("GStreamer not found in os.environ")	
 
 if os.name == "posix" and sys.platform == "darwin":
 	# For OS X
