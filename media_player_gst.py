@@ -901,13 +901,15 @@ class media_player_gst(item.item, generic_response.generic_response):
 		Returns:
 		True on success
 		"""
-		if self.gst_loop.is_running():	
-			# Free resources claimed by gstreamer
-			self.player.set_state(gst.STATE_NULL)
-			# Quit the player's main event loop
-			self.gst_loop.quit()
+		try:
+			if self.gst_loop.is_running():	
+				# Free resources claimed by gstreamer
+				self.player.set_state(gst.STATE_NULL)
+				# Quit the player's main event loop
+				self.gst_loop.quit()
+		except AttributeError:
+			print "media_player_gst: clean up skipped; gst_loop already unset"
 
-		
 		return True
 			
 	def var_info(self):
