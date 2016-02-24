@@ -636,10 +636,17 @@ class media_player_gst(item.item, generic_response.generic_response):
 
 		# Find the full path to the video file. This will point to some
 		# temporary folder where the file pool has been placed
-		path = self.experiment.get_file(str(self.eval_text(self.get("video_src"))))
+
+		# Temporary workaround to work with new OpenSesame 3 structure
+		try:
+			video_loc = self.eval_text(self.get("video_src"))
+		except AttributeError:
+			video_loc = self.syntax.eval_text(self.get("video_src"))
+
+		path = self.experiment.get_file(str(video_loc))
 
 		# Open the video file
-		if not os.path.exists(path) or str(self.eval_text("video_src")).strip() == "":
+		if not os.path.exists(path) or str(video_loc).strip() == "":
 			raise osexception(u"Video file '%s' was not found in video_player '%s' (or no video file was specified)." % (os.path.basename(path), self.name))
 
 		debug.msg(u"media_player_gst.prepare(): loading '%s'" % path)
@@ -662,7 +669,14 @@ class media_player_gst(item.item, generic_response.generic_response):
 			if self.get("canvas_backend") == u"xpyriment":
 				# Expyriment uses OpenGL in fullscreen mode, but just pygame
 				# (legacy) display mode otherwise
-				if self.experiment.fullscreen:
+			
+				# OS3 compatibility
+				try:
+					fullscreen = self.var.fullscreen
+				except:
+					fullscreen = self.experiment.fullscreen
+			
+				if fullscreen:
 					self.handler = expyriment_handler(self, self.experiment.window, custom_event_handler)
 				else:
 					self.handler = legacy_handler(self, self.experiment.window, custom_event_handler)
@@ -806,11 +820,8 @@ class media_player_gst(item.item, generic_response.generic_response):
 
 		# Log the onset time of the item
 		self.set_item_onset()
-
 		# Set some response variables, in case a response will be given
-		if self.experiment.start_response_interval == None:
-			self.experiment.start_response_interval = self.get("time_%s" % self.name)
-			self.experiment.end_response_interval = self.experiment.start_response_interval
+		self.experiment._start_response_interval = self.get("time_%s" % self.name)
 		self.experiment.response = None
 
 		if self.file_loaded:
